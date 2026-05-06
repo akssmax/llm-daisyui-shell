@@ -1,4 +1,4 @@
-import type { UIMessage } from "ai"
+import type { FileUIPart, UIMessage } from "ai"
 
 export type MockSource = { href: string; title: string }
 
@@ -25,6 +25,7 @@ export type MockAssistantMeta = {
   confirmation?: { title: string; description?: string }
   context?: { label: string; value: string }
   citations?: Array<{ label: string; href: string }>
+  attachments?: Array<FileUIPart & { id: string }>
 }
 
 export type MockChatItem = {

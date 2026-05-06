@@ -1,10 +1,9 @@
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   FileText,
   FolderKanban,
   Globe,
   MessageSquarePlus,
-  Music2,
   PanelLeftClose,
   PanelLeftOpen,
   Table2,
@@ -52,6 +51,14 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AIElementsChatShell } from "@/components/chat/ai-elements-chat-shell"
 import { ThemeSwitcher } from "@/components/theme-switcher"
+import {
+  createChatThread,
+  loadChatThreads,
+  saveChatThreads,
+  type ChatThread,
+  updateChatThread,
+} from "@/lib/chat-threads"
+import { getThreadIdFromUrl, onThreadUrlChange, setThreadIdInUrl } from "@/lib/thread-url"
 
 type PageKey = "new-chat" | "sites" | "smart-tables" | "page-boosts" | "routines"
 type IconType = React.ComponentType<{ className?: string }>
@@ -294,8 +301,14 @@ function RoutinesPage() {
   )
 }
 
-function ChatPage() {
-  return <AIElementsChatShell />
+function ChatPage({
+  thread,
+  onUpdateThread,
+}: {
+  thread: ChatThread
+  onUpdateThread: (threadId: string, updater: (thread: ChatThread) => ChatThread) => void
+}) {
+  return <AIElementsChatShell thread={thread} onUpdateThread={onUpdateThread} />
 }
 
 function StandardPageShell({
@@ -335,13 +348,84 @@ function StandardPageShell({
 
 export function App() {
   const [activePage, setActivePage] = useState<PageKey>("new-chat")
+  const [threads, setThreads] = useState<ChatThread[]>([])
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
 
-  const recentItems = [
-    "Generate 2 min instrumental",
-    "Create upbeat 30 sec jingle",
-    "Compose relaxing piano mix",
-    "Design calm ambient track",
-  ]
+  const ensureActiveThreadFromUrl = useCallback(
+    (currentThreads: ChatThread[]) => {
+      let nextThreads = currentThreads
+      const requestedThreadId = getThreadIdFromUrl()
+      let activeThread =
+        (requestedThreadId
+          ? nextThreads.find((thread) => thread.threadId === requestedThreadId)
+          : null) ?? nextThreads[0]
+
+      if (!activeThread) {
+        activeThread = createChatThread()
+        nextThreads = [activeThread]
+      }
+
+      if (requestedThreadId !== activeThread.threadId) {
+        setThreadIdInUrl(activeThread.threadId, { replace: true })
+      }
+
+      setThreads(nextThreads)
+      setActiveThreadId(activeThread.threadId)
+    },
+    []
+  )
+
+  useEffect(() => {
+    const loadedThreads = loadChatThreads()
+    ensureActiveThreadFromUrl(loadedThreads)
+  }, [ensureActiveThreadFromUrl])
+
+  useEffect(() => {
+    saveChatThreads(threads)
+  }, [threads])
+
+  useEffect(() => {
+    return onThreadUrlChange(() => {
+      const requestedThreadId = getThreadIdFromUrl()
+      if (!requestedThreadId) {
+        ensureActiveThreadFromUrl(threads)
+        return
+      }
+      const existing = threads.find((thread) => thread.threadId === requestedThreadId)
+      if (!existing) {
+        ensureActiveThreadFromUrl(threads)
+        return
+      }
+      setActivePage("new-chat")
+      setActiveThreadId(existing.threadId)
+    })
+  }, [ensureActiveThreadFromUrl, threads])
+
+  const activeThread = useMemo(
+    () => threads.find((thread) => thread.threadId === activeThreadId) ?? null,
+    [activeThreadId, threads]
+  )
+
+  const createAndSelectThread = useCallback(() => {
+    const newThread = createChatThread()
+    setThreads((prev) => [newThread, ...prev])
+    setActiveThreadId(newThread.threadId)
+    setThreadIdInUrl(newThread.threadId)
+    setActivePage("new-chat")
+  }, [])
+
+  const selectThread = useCallback((threadId: string) => {
+    setActiveThreadId(threadId)
+    setThreadIdInUrl(threadId)
+    setActivePage("new-chat")
+  }, [])
+
+  const handleUpdateThread = useCallback(
+    (threadId: string, updater: (thread: ChatThread) => ChatThread) => {
+      setThreads((prev) => updateChatThread(prev, threadId, updater))
+    },
+    []
+  )
 
   const currentLabel = useMemo(
     () => workspaceItems.find((item) => item.key === activePage)?.label ?? "New Chat",
@@ -369,9 +453,15 @@ export function App() {
                 {workspaceItems.map((item) => (
                   <SidebarMenuItem key={item.label}>
                     <SidebarMenuButton
-                      isActive={item.key === activePage}
+                      isActive={item.key === activePage && (item.key !== "new-chat" || Boolean(activeThread))}
                       tooltip={item.label}
-                      onClick={() => setActivePage(item.key)}
+                      onClick={() => {
+                        if (item.key === "new-chat") {
+                          createAndSelectThread()
+                          return
+                        }
+                        setActivePage(item.key)
+                      }}
                     >
                       <item.icon />
                       <span>{item.label}</span>
@@ -386,15 +476,15 @@ export function App() {
             <SidebarGroupLabel>Recents</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {recentItems.map((item, index) => (
-                  <SidebarMenuItem key={item}>
+                {threads.map((thread) => (
+                  <SidebarMenuItem key={thread.threadId}>
                     <SidebarMenuButton
-                      isActive={activePage === "new-chat" && index === 0}
-                      tooltip={item}
-                      onClick={() => setActivePage("new-chat")}
+                      isActive={activePage === "new-chat" && activeThreadId === thread.threadId}
+                      tooltip={thread.title}
+                      onClick={() => selectThread(thread.threadId)}
                     >
-                      {index === 0 ? <Music2 /> : <FolderKanban />}
-                      <span>{item}</span>
+                      <FolderKanban />
+                      <span>{thread.title}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
@@ -434,7 +524,9 @@ export function App() {
 
       <SidebarInset className="h-svh overflow-hidden">
         <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
-          {activePage === "new-chat" && <ChatPage />}
+          {activePage === "new-chat" && activeThread ? (
+            <ChatPage thread={activeThread} onUpdateThread={handleUpdateThread} />
+          ) : null}
           {activePage === "sites" && (
             <StandardPageShell
               title={currentLabel}

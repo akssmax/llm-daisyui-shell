@@ -6,11 +6,6 @@ import type { UIMessage } from "ai"
 import type { ToolUIPart } from "ai"
 
 import {
-  Checkpoint,
-  CheckpointIcon,
-  CheckpointTrigger,
-} from "@/components/ai-elements/checkpoint"
-import {
   Context,
   ContextContent,
   ContextContentBody,
@@ -43,11 +38,12 @@ import {
   MessageContent,
 } from "@/components/ai-elements/message"
 import {
-  ModelSelector,
-  ModelSelectorContent,
-  ModelSelectorItem,
-  ModelSelectorTrigger,
-} from "@/components/ai-elements/model-selector"
+  Attachment,
+  AttachmentInfo,
+  AttachmentPreview,
+  AttachmentRemove,
+  Attachments,
+} from "@/components/ai-elements/attachments"
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -60,6 +56,8 @@ import {
   PromptInputProvider,
   PromptInputSubmit,
   PromptInputTextarea,
+  PromptInputTools,
+  usePromptInputAttachments,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
 import {
@@ -81,18 +79,28 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool"
-import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer"
 import { streamChat } from "@/lib/llm-service"
+import type { ChatThread } from "@/lib/chat-threads"
 import { MISTRAL_MODELS, type MistralModel } from "@/lib/llm-types"
 import type { MockChatItem } from "@/lib/mock-chat-data"
 
 import {
+  Brain,
   CheckCircle2,
   Check,
   Copy,
-  Search,
+  Mic,
+  Plus,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
@@ -111,15 +119,73 @@ function getMessageText(message: UIMessage): string {
     .join("")
 }
 
-export function AIElementsChatShell({ className }: { className?: string }) {
+function estimateTokenCount(text: string): number {
+  if (!text.trim()) return 0
+  return Math.ceil(text.length / 4)
+}
+
+const MODEL_CONTEXT_LIMITS: Record<MistralModel, number> = {
+  "mistral-small-latest": 8192,
+  "mistral-medium-latest": 8192,
+  "mistral-large-latest": 8192,
+}
+
+function PromptInputAttachmentStrip() {
+  const attachments = usePromptInputAttachments()
+
+  if (attachments.files.length === 0) return null
+
+  return (
+    <Attachments
+      variant="inline"
+      className="order-first w-full justify-start px-2.5 pt-2"
+    >
+      {attachments.files.map((file) => (
+        <Attachment
+          key={file.id}
+          data={file}
+          onRemove={() => attachments.remove(file.id)}
+        >
+          <AttachmentPreview />
+          <AttachmentInfo />
+          <AttachmentRemove />
+        </Attachment>
+      ))}
+    </Attachments>
+  )
+}
+
+export function AIElementsChatShell({
+  className,
+  thread,
+  onUpdateThread,
+}: {
+  className?: string
+  thread: ChatThread
+  onUpdateThread: (threadId: string, updater: (thread: ChatThread) => ChatThread) => void
+}) {
   const [status, setStatus] = useState<ChatStatus>("ready")
   const [text, setText] = useState("")
-  const [messages, setMessages] = useState<MockChatItem[]>([])
   const [activeBranch, setActiveBranch] = useState<Record<string, number>>({})
   const [selectedModel, setSelectedModel] = useState<MistralModel>("mistral-small-latest")
   const [abortController, setAbortController] = useState<AbortController | null>(null)
   const [llmSuggestions, setLlmSuggestions] = useState<string[]>([])
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const messages = thread.messages
+
+  const contextMetrics = useMemo(() => {
+    const inputTokens = estimateTokenCount(text)
+    const messageTokens = messages.reduce((total, item) => {
+      return total + estimateTokenCount(getMessageText(item.message))
+    }, 0)
+    const usedTokens = inputTokens + messageTokens
+    const maxTokens = MODEL_CONTEXT_LIMITS[selectedModel] ?? 8192
+
+    return {
+      maxTokens,
+      usedTokens,
+    }
+  }, [messages, selectedModel, text])
 
   const assistant = useMemo(() => messages.find((m) => m.message.role === "assistant"), [messages])
   const latestAssistantMessageId = useMemo(() => {
@@ -131,11 +197,69 @@ export function AIElementsChatShell({ className }: { className?: string }) {
     return null
   }, [messages])
 
+  const updateThreadMessages = useCallback(
+    (updater: (prev: MockChatItem[]) => MockChatItem[]) => {
+      onUpdateThread(thread.threadId, (current) => ({
+        ...current,
+        messages: updater(current.messages),
+      }))
+    },
+    [onUpdateThread, thread.threadId]
+  )
+
   useEffect(() => {
     return () => {
       abortController?.abort()
     }
   }, [abortController])
+
+  useEffect(() => {
+    abortController?.abort()
+    setStatus("ready")
+    setText("")
+    setLlmSuggestions([])
+    setCopiedMessageId(null)
+    setActiveBranch({})
+  }, [thread.threadId])
+
+  const refineChatTitle = useCallback(async (firstUserMessage: string, threadId: string) => {
+    const prompt = [
+      "Create a short chat title for this user request.",
+      "Rules:",
+      "- Max 6 words",
+      "- Plain text only",
+      "- No quotes, no punctuation at the end",
+      "",
+      `User request: ${firstUserMessage}`,
+    ].join("\n")
+
+    let generatedTitle = ""
+    try {
+      await streamChat({
+        maxTokens: 24,
+        messages: [{ content: prompt, role: "user" }],
+        model: "mistral-small-latest",
+        onToken: (token) => {
+          generatedTitle += token
+        },
+        temperature: 0.2,
+      })
+      const cleanTitle = generatedTitle
+        .trim()
+        .replace(/^["'`]+|["'`]+$/g, "")
+        .split("\n")[0]
+        ?.trim()
+
+      if (cleanTitle) {
+        onUpdateThread(threadId, (current) => ({
+          ...current,
+          title: cleanTitle.slice(0, 64),
+        }))
+      }
+    } catch {
+      // Title refinement is optional; keep the original title on failure.
+    }
+  }, [onUpdateThread])
 
   const handleSubmit = useCallback(
     async (message: PromptInputMessage) => {
@@ -147,9 +271,30 @@ export function AIElementsChatShell({ className }: { className?: string }) {
 
       const userId = `u-${Date.now()}`
       const userText = message.text || (hasFiles ? "Sent with attachments" : "")
-      setMessages((prev) => [
+      const isFirstUserMessage = messages.every((item) => item.message.role !== "user")
+
+      if (isFirstUserMessage && userText.trim()) {
+        const initialTitle = userText.trim().slice(0, 72)
+        onUpdateThread(thread.threadId, (current) => ({
+          ...current,
+          title: initialTitle,
+        }))
+        window.setTimeout(() => {
+          void refineChatTitle(initialTitle, thread.threadId)
+        }, 1800)
+      }
+
+      const userAttachments = (message.files ?? []).map((file, index) => ({
+        ...file,
+        id: `${userId}-file-${index}`,
+      }))
+      updateThreadMessages((prev) => [
         ...prev,
-        { id: userId, message: toTextMessage(userId, "user", userText) },
+        {
+          id: userId,
+          message: toTextMessage(userId, "user", userText),
+          meta: userAttachments.length > 0 ? { attachments: userAttachments } : undefined,
+        },
       ])
 
       setText("")
@@ -163,7 +308,7 @@ export function AIElementsChatShell({ className }: { className?: string }) {
         meta: {},
       }
 
-      setMessages((prev) => [...prev, assistantItem])
+      updateThreadMessages((prev) => [...prev, assistantItem])
 
       const controller = new AbortController()
       setAbortController(controller)
@@ -182,7 +327,7 @@ export function AIElementsChatShell({ className }: { className?: string }) {
           messages: history,
           model: selectedModel,
           onToken: (chunk) => {
-            setMessages((prev) =>
+            updateThreadMessages((prev) =>
               prev.map((it) => {
                 if (it.id !== assistantId) return it
                 const previous = getMessageText(it.message)
@@ -197,7 +342,7 @@ export function AIElementsChatShell({ className }: { className?: string }) {
             setLlmSuggestions(suggestions)
           },
           onReasoning: (reasoning) => {
-            setMessages((prev) =>
+            updateThreadMessages((prev) =>
               prev.map((it) =>
                 it.id === assistantId
                   ? {
@@ -212,7 +357,7 @@ export function AIElementsChatShell({ className }: { className?: string }) {
             )
           },
           onSources: (sources) => {
-            setMessages((prev) =>
+            updateThreadMessages((prev) =>
               prev.map((it) =>
                 it.id === assistantId
                   ? {
@@ -227,7 +372,7 @@ export function AIElementsChatShell({ className }: { className?: string }) {
             )
           },
           onCitations: (citations) => {
-            setMessages((prev) =>
+            updateThreadMessages((prev) =>
               prev.map((it) =>
                 it.id === assistantId
                   ? {
@@ -247,7 +392,7 @@ export function AIElementsChatShell({ className }: { className?: string }) {
         setStatus("ready")
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Failed to get response."
-        setMessages((prev) =>
+        updateThreadMessages((prev) =>
           prev.map((it) =>
             it.id === assistantId
               ? {
@@ -266,7 +411,7 @@ export function AIElementsChatShell({ className }: { className?: string }) {
         setAbortController(null)
       }
     },
-    [messages, selectedModel]
+    [messages, onUpdateThread, refineChatTitle, selectedModel, thread.threadId, updateThreadMessages]
   )
 
   const handleSuggestionClick = useCallback(
@@ -280,11 +425,16 @@ export function AIElementsChatShell({ className }: { className?: string }) {
     <div className={cn("relative flex min-h-0 flex-1 flex-col overflow-hidden", className)}>
       {/* Top helper strip to showcase non-message components */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/30 px-4 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <SidebarTrigger className="md:hidden" />
+          <p className="truncate text-sm font-medium text-foreground">{thread.title}</p>
+        </div>
         <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="text-xs">
-            Mistral live chat
-          </Badge>
-          <Context usedTokens={1234} maxTokens={8192} modelId={selectedModel}>
+          <Context
+            usedTokens={contextMetrics.usedTokens}
+            maxTokens={contextMetrics.maxTokens}
+            modelId={selectedModel}
+          >
             <ContextTrigger />
             <ContextContent>
               <ContextContentHeader />
@@ -295,25 +445,6 @@ export function AIElementsChatShell({ className }: { className?: string }) {
               </ContextContentBody>
             </ContextContent>
           </Context>
-          <ModelSelector>
-            <ModelSelectorTrigger />
-            <ModelSelectorContent>
-              {MISTRAL_MODELS.map((model) => (
-                <ModelSelectorItem key={model} onSelect={() => setSelectedModel(model)}>
-                  {model}
-                </ModelSelectorItem>
-              ))}
-            </ModelSelectorContent>
-          </ModelSelector>
-          <Badge variant="outline" className="text-xs text-muted-foreground">
-            {selectedModel}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2">
-          <Checkpoint>
-            <CheckpointIcon />
-            <CheckpointTrigger tooltip="Mock checkpoint">Checkpoint</CheckpointTrigger>
-          </Checkpoint>
         </div>
       </div>
 
@@ -348,6 +479,16 @@ export function AIElementsChatShell({ className }: { className?: string }) {
                   <MessageBranchContent>
                     <Message from={msg.role}>
                       <div className="space-y-2">
+                        {msg.role === "user" && meta?.attachments?.length ? (
+                          <Attachments variant="grid">
+                            {meta.attachments.map((attachment) => (
+                              <Attachment key={attachment.id} data={attachment}>
+                                <AttachmentPreview />
+                              </Attachment>
+                            ))}
+                          </Attachments>
+                        ) : null}
+
                         {meta?.sources?.length ? (
                           <Sources>
                             <SourcesTrigger count={meta.sources.length} />
@@ -498,31 +639,65 @@ export function AIElementsChatShell({ className }: { className?: string }) {
 
           <PromptInputProvider>
             <PromptInput maxFileSize={5 * 1024 * 1024} maxFiles={4} onSubmit={handleSubmit}>
+              <PromptInputAttachmentStrip />
               <PromptInputTextarea
                 onChange={(e) => setText(e.target.value)}
                 value={text}
-                placeholder="type @ for adding tabs or workflows"
+                placeholder="Ask anything"
               />
               <PromptInputFooter>
-                <PromptInputButton variant="outline" className="rounded-full">
-                  <Search className="size-4" />
-                  Search
-                </PromptInputButton>
-                <PromptInputActionMenu>
-                  <PromptInputActionMenuTrigger variant="outline" tooltip="Add attachment options" />
-                  <PromptInputActionMenuContent>
-                    <PromptInputActionAddAttachments />
-                    <PromptInputActionAddScreenshot />
-                  </PromptInputActionMenuContent>
-                </PromptInputActionMenu>
-                <PromptInputSubmit
-                  disabled={status === "streaming"}
-                  onStop={() => {
-                    abortController?.abort()
-                    setStatus("ready")
-                  }}
-                  status={status === "streaming" ? "streaming" : undefined}
-                />
+                <PromptInputTools>
+                  <PromptInputActionMenu>
+                    <PromptInputActionMenuTrigger
+                      variant="outline"
+                      className="rounded-xl"
+                      tooltip="Add context"
+                    >
+                      <Plus className="size-4" />
+                    </PromptInputActionMenuTrigger>
+                    <PromptInputActionMenuContent>
+                      <PromptInputActionAddAttachments />
+                      <PromptInputActionAddScreenshot />
+                    </PromptInputActionMenuContent>
+                  </PromptInputActionMenu>
+
+                  <Select
+                    onValueChange={(value) => setSelectedModel(value as MistralModel)}
+                    value={selectedModel}
+                  >
+                    <SelectTrigger className="h-8 min-w-44 rounded-xl bg-background text-xs text-foreground">
+                      <div className="flex items-center gap-1.5">
+                        <Brain className="size-3.5 text-muted-foreground" />
+                        <SelectValue placeholder="Select model" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MISTRAL_MODELS.map((model) => (
+                        <SelectItem key={model} value={model}>
+                          {model}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </PromptInputTools>
+
+                <PromptInputTools className="justify-end">
+                  <PromptInputButton
+                    variant="outline"
+                    className="rounded-xl"
+                    tooltip="Voice dictation"
+                  >
+                    <Mic className="size-4" />
+                  </PromptInputButton>
+                  <PromptInputSubmit
+                    disabled={status === "streaming"}
+                    onStop={() => {
+                      abortController?.abort()
+                      setStatus("ready")
+                    }}
+                    status={status === "streaming" ? "streaming" : undefined}
+                  />
+                </PromptInputTools>
               </PromptInputFooter>
             </PromptInput>
           </PromptInputProvider>
