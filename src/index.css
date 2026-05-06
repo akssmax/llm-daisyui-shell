@@ -2,8 +2,11 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
+@plugin "daisyui" {
+    themes: light --default, dark --prefersdark, cupcake, bumblebee, emerald, corporate, synthwave, retro, cyberpunk, valentine, halloween, garden, forest, aqua, lofi, pastel, fantasy, wireframe, black, luxury, dracula, cmyk, autumn, business, acid, lemonade, night, coffee, winter, dim, nord, sunset, caramellatte, abyss, silk;
+}
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *, [data-theme=dark], [data-theme=dark] *, [data-theme=black], [data-theme=black] *, [data-theme=luxury], [data-theme=luxury] *, [data-theme=dracula], [data-theme=dracula] *, [data-theme=business], [data-theme=business] *, [data-theme=night], [data-theme=night] *, [data-theme=coffee], [data-theme=coffee] *, [data-theme=dim], [data-theme=dim] *, [data-theme=sunset], [data-theme=sunset] *, [data-theme=abyss], [data-theme=abyss] *));
 
 @theme inline {
     --font-heading: var(--font-sans);
@@ -49,20 +52,22 @@
 }
 
 :root {
+    --accent-200: oklch(0.93 0.055 151.2);
+    --accent-500: oklch(0.627 0.194 149.214);
     --background: oklch(1 0 0);
     --foreground: oklch(0.141 0.005 285.823);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.141 0.005 285.823);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.141 0.005 285.823);
-    --primary: oklch(0.527 0.154 150.069);
+    --primary: var(--accent-500);
     --primary-foreground: oklch(0.982 0.018 155.826);
     --secondary: oklch(0.967 0.001 286.375);
     --secondary-foreground: oklch(0.21 0.006 285.885);
     --muted: oklch(0.967 0.001 286.375);
     --muted-foreground: oklch(0.552 0.016 285.938);
-    --accent: oklch(0.967 0.001 286.375);
-    --accent-foreground: oklch(0.21 0.006 285.885);
+    --accent: var(--accent-200);
+    --accent-foreground: oklch(0.21 0.03 152);
     --destructive: oklch(0.577 0.245 27.325);
     --border: oklch(0.92 0.004 286.32);
     --input: oklch(0.92 0.004 286.32);
@@ -75,28 +80,30 @@
     --radius: 0.625rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.141 0.005 285.823);
-    --sidebar-primary: oklch(0.627 0.194 149.214);
+    --sidebar-primary: var(--accent-500);
     --sidebar-primary-foreground: oklch(0.982 0.018 155.826);
-    --sidebar-accent: oklch(0.967 0.001 286.375);
-    --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
+    --sidebar-accent: var(--accent-200);
+    --sidebar-accent-foreground: oklch(0.21 0.03 152);
     --sidebar-border: oklch(0.92 0.004 286.32);
     --sidebar-ring: oklch(0.705 0.015 286.067);
 }
 
 .dark {
+    --accent-200: oklch(0.42 0.08 151.2);
+    --accent-500: oklch(0.723 0.219 149.579);
     --background: oklch(0.141 0.005 285.823);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.21 0.006 285.885);
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.21 0.006 285.885);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.448 0.119 151.328);
+    --primary: var(--accent-500);
     --primary-foreground: oklch(0.982 0.018 155.826);
     --secondary: oklch(0.274 0.006 286.033);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.274 0.006 286.033);
     --muted-foreground: oklch(0.705 0.015 286.067);
-    --accent: oklch(0.274 0.006 286.033);
+    --accent: var(--accent-200);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
@@ -109,12 +116,58 @@
     --chart-5: oklch(0.274 0.006 286.033);
     --sidebar: oklch(0.21 0.006 285.885);
     --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.723 0.219 149.579);
+    --sidebar-primary: var(--accent-500);
     --sidebar-primary-foreground: oklch(0.982 0.018 155.826);
-    --sidebar-accent: oklch(0.274 0.006 286.033);
+    --sidebar-accent: var(--accent-200);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.552 0.016 285.938);
+}
+
+:root[data-theme] {
+    color-scheme: light;
+    --background: var(--color-base-100);
+    --foreground: var(--color-base-content);
+    --card: var(--color-base-100);
+    --card-foreground: var(--color-base-content);
+    --popover: var(--color-base-100);
+    --popover-foreground: var(--color-base-content);
+    --primary: var(--color-primary);
+    --primary-foreground: var(--color-primary-content);
+    --secondary: var(--color-secondary);
+    --secondary-foreground: var(--color-secondary-content);
+    --muted: var(--color-base-200);
+    --muted-foreground: color-mix(in oklch, var(--color-base-content) 68%, transparent);
+    --accent: var(--color-accent);
+    --accent-foreground: var(--color-accent-content);
+    --destructive: var(--color-error);
+    --border: var(--color-base-300);
+    --input: var(--color-base-300);
+    --ring: var(--color-primary);
+    --radius: var(--radius-box);
+    --sidebar: var(--color-base-100);
+    --sidebar-foreground: var(--color-base-content);
+    --sidebar-primary: var(--color-primary);
+    --sidebar-primary-foreground: var(--color-primary-content);
+    --sidebar-accent: var(--color-base-200);
+    --sidebar-accent-foreground: var(--color-base-content);
+    --sidebar-border: var(--color-base-300);
+    --sidebar-ring: var(--color-primary);
+}
+
+:root[data-theme="dark"],
+:root[data-theme="black"],
+:root[data-theme="dracula"],
+:root[data-theme="luxury"],
+:root[data-theme="night"],
+:root[data-theme="coffee"],
+:root[data-theme="dim"],
+:root[data-theme="abyss"],
+:root[data-theme="synthwave"],
+:root[data-theme="halloween"],
+:root[data-theme="forest"],
+:root[data-theme="business"] {
+    color-scheme: dark;
 }
 
 @layer base {

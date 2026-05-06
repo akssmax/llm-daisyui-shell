@@ -20,4 +20,25 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  // Generated/vendor code (shadcn + AI Elements) intentionally violates some dev-only rules.
+  {
+    files: [
+      'src/components/ui/**/*.{ts,tsx}',
+      'src/components/ai-elements/**/*.{ts,tsx}',
+    ],
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'off',
+      'react-refresh/only-export-components': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/refs': 'off',
+      'react-hooks/static-components': 'off',
+    },
+  },
+  // Chat shell internals: allow component registries alongside components.
+  {
+    files: ['src/components/chat/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

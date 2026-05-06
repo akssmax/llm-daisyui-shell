@@ -1,8 +1,47 @@
 /* eslint-disable react-refresh/only-export-components */
 import * as React from "react"
 
-type Theme = "dark" | "light" | "system"
-type ResolvedTheme = "dark" | "light"
+export const DAISY_THEMES = [
+  "light",
+  "dark",
+  "cupcake",
+  "bumblebee",
+  "emerald",
+  "corporate",
+  "synthwave",
+  "retro",
+  "cyberpunk",
+  "valentine",
+  "halloween",
+  "garden",
+  "forest",
+  "aqua",
+  "lofi",
+  "pastel",
+  "fantasy",
+  "wireframe",
+  "black",
+  "luxury",
+  "dracula",
+  "cmyk",
+  "autumn",
+  "business",
+  "acid",
+  "lemonade",
+  "night",
+  "coffee",
+  "winter",
+  "dim",
+  "nord",
+  "sunset",
+  "caramellatte",
+  "abyss",
+  "silk",
+] as const
+
+type DaisyTheme = (typeof DAISY_THEMES)[number]
+type Theme = DaisyTheme | "system"
+type ResolvedTheme = DaisyTheme
 
 type ThemeProviderProps = {
   children: React.ReactNode
@@ -13,11 +52,12 @@ type ThemeProviderProps = {
 
 type ThemeProviderState = {
   theme: Theme
+  resolvedTheme: ResolvedTheme
   setTheme: (theme: Theme) => void
 }
 
 const COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)"
-const THEME_VALUES: Theme[] = ["dark", "light", "system"]
+const THEME_VALUES: Theme[] = [...DAISY_THEMES, "system"]
 
 const ThemeProviderContext = React.createContext<
   ThemeProviderState | undefined
@@ -31,7 +71,7 @@ function isTheme(value: string | null): value is Theme {
   return THEME_VALUES.includes(value as Theme)
 }
 
-function getSystemTheme(): ResolvedTheme {
+function getSystemTheme(): "dark" | "light" {
   if (window.matchMedia(COLOR_SCHEME_QUERY).matches) {
     return "dark"
   }
@@ -58,6 +98,14 @@ function disableTransitionsTemporarily() {
   }
 }
 
+function resolveTheme(theme: Theme): ResolvedTheme {
+  if (theme === "system") {
+    return getSystemTheme()
+  }
+
+  return theme
+}
+
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
     return false
@@ -79,8 +127,8 @@ function isEditableTarget(target: EventTarget | null) {
 
 export function ThemeProvider({
   children,
-  defaultTheme = "system",
-  storageKey = "theme",
+  defaultTheme = "light",
+  storageKey = "app-theme",
   disableTransitionOnChange = true,
   ...props
 }: ThemeProviderProps) {
@@ -104,14 +152,18 @@ export function ThemeProvider({
   const applyTheme = React.useCallback(
     (nextTheme: Theme) => {
       const root = document.documentElement
-      const resolvedTheme =
-        nextTheme === "system" ? getSystemTheme() : nextTheme
+      const resolvedTheme = resolveTheme(nextTheme)
       const restoreTransitions = disableTransitionOnChange
         ? disableTransitionsTemporarily()
         : null
 
       root.classList.remove("light", "dark")
-      root.classList.add(resolvedTheme)
+      if (resolvedTheme === "dark") {
+        root.classList.add("dark")
+      } else {
+        root.classList.add("light")
+      }
+      root.setAttribute("data-theme", resolvedTheme)
 
       if (restoreTransitions) {
         restoreTransitions()
@@ -158,14 +210,8 @@ export function ThemeProvider({
       }
 
       setThemeState((currentTheme) => {
-        const nextTheme =
-          currentTheme === "dark"
-            ? "light"
-            : currentTheme === "light"
-              ? "dark"
-              : getSystemTheme() === "dark"
-                ? "light"
-                : "dark"
+        const resolvedCurrentTheme = resolveTheme(currentTheme)
+        const nextTheme = resolvedCurrentTheme === "dark" ? "light" : "dark"
 
         localStorage.setItem(storageKey, nextTheme)
         return nextTheme
@@ -207,6 +253,7 @@ export function ThemeProvider({
   const value = React.useMemo(
     () => ({
       theme,
+      resolvedTheme: resolveTheme(theme),
       setTheme,
     }),
     [theme, setTheme]
