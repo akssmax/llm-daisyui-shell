@@ -83,7 +83,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   JavaScript stack
                 </p>
-                <CodeBlock code={errorStack} language="text" className="max-h-40 min-w-0 max-w-full">
+                <CodeBlock code={errorStack} language="tsx" className="max-h-40 min-w-0 max-w-full">
                   <CodeBlockHeader>
                     <CodeBlockTitle>
                       <CodeBlockFilename>javascript-stack.txt</CodeBlockFilename>
@@ -99,7 +99,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   React component stack
                 </p>
-                <CodeBlock code={componentStack} language="text" className="max-h-40 min-w-0 max-w-full">
+                <CodeBlock code={componentStack} language="tsx" className="max-h-40 min-w-0 max-w-full">
                   <CodeBlockHeader>
                     <CodeBlockTitle>
                       <CodeBlockFilename>react-component-stack.txt</CodeBlockFilename>
