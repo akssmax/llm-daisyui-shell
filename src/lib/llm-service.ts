@@ -2,6 +2,7 @@ import type { LlmChatRequest } from "@/lib/llm-types"
 
 export interface StreamChatOptions extends LlmChatRequest {
   onToken: (token: string) => void
+  onSuggestions?: (suggestions: string[]) => void
   signal?: AbortSignal
 }
 
@@ -17,6 +18,7 @@ function shouldRetryStatus(status: number): boolean {
 
 function parseSseEvent(rawEvent: string): { event: string; data: string } | null {
   const lines = rawEvent
+    .replace(/\r\n/g, "\n")
     .split("\n")
     .map((line) => line.trimEnd())
     .filter(Boolean)
@@ -42,7 +44,8 @@ function parseSseEvent(rawEvent: string): { event: string; data: string } | null
 
 async function streamSseResponse(
   response: Response,
-  onToken: (token: string) => void
+  onToken: (token: string) => void,
+  onSuggestions?: (suggestions: string[]) => void
 ): Promise<void> {
   if (!response.body) {
     throw new Error("Missing response body from /api/chat")
@@ -51,40 +54,57 @@ async function streamSseResponse(
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
+  const processEvent = (rawEvent: string) => {
+    const parsed = parseSseEvent(rawEvent)
+    if (!parsed) return
+
+    if (parsed.event === "token") {
+      try {
+        const payload = JSON.parse(parsed.data) as { text?: string }
+        if (payload.text) onToken(payload.text)
+      } catch {
+        // Ignore malformed token payloads.
+      }
+    } else if (parsed.event === "suggestions") {
+      try {
+        const payload = JSON.parse(parsed.data) as { suggestions?: unknown }
+        if (!Array.isArray(payload.suggestions)) return
+        const suggestions = payload.suggestions.filter((item): item is string => typeof item === "string")
+        if (suggestions.length > 0) {
+          onSuggestions?.(suggestions)
+        }
+      } catch {
+        // Ignore malformed suggestions payloads.
+      }
+    } else if (parsed.event === "error") {
+      try {
+        const payload = JSON.parse(parsed.data) as { message?: string }
+        throw new Error(payload.message || "Streaming failed")
+      } catch (error) {
+        if (error instanceof Error) throw error
+        throw new Error("Streaming failed")
+      }
+    }
+  }
 
   while (true) {
     const { done, value } = await reader.read()
-    if (done) break
+    if (done) {
+      // Flush any trailing event when stream closes without delimiter.
+      const trailingEvent = buffer.trim()
+      if (trailingEvent) {
+        processEvent(trailingEvent)
+      }
+      break
+    }
 
-    buffer += decoder.decode(value, { stream: true })
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n")
 
     let separatorIndex = buffer.indexOf("\n\n")
     while (separatorIndex !== -1) {
       const chunk = buffer.slice(0, separatorIndex)
       buffer = buffer.slice(separatorIndex + 2)
-
-      const parsed = parseSseEvent(chunk)
-      if (!parsed) {
-        separatorIndex = buffer.indexOf("\n\n")
-        continue
-      }
-
-      if (parsed.event === "token") {
-        try {
-          const payload = JSON.parse(parsed.data) as { text?: string }
-          if (payload.text) onToken(payload.text)
-        } catch {
-          // Ignore malformed token payloads.
-        }
-      } else if (parsed.event === "error") {
-        try {
-          const payload = JSON.parse(parsed.data) as { message?: string }
-          throw new Error(payload.message || "Streaming failed")
-        } catch (error) {
-          if (error instanceof Error) throw error
-          throw new Error("Streaming failed")
-        }
-      }
+      processEvent(chunk)
 
       separatorIndex = buffer.indexOf("\n\n")
     }
@@ -94,7 +114,8 @@ async function streamSseResponse(
 async function requestChat(
   payload: LlmChatRequest,
   signal: AbortSignal | undefined,
-  onToken: (token: string) => void
+  onToken: (token: string) => void,
+  onSuggestions?: (suggestions: string[]) => void
 ): Promise<{ emittedTokens: number }> {
   const response = await fetch("/api/chat", {
     body: JSON.stringify(payload),
@@ -118,19 +139,23 @@ async function requestChat(
   }
 
   let tokenCount = 0
-  await streamSseResponse(response, (token) => {
-    tokenCount += 1
-    onToken(token)
-  })
+  await streamSseResponse(
+    response,
+    (token) => {
+      tokenCount += 1
+      onToken(token)
+    },
+    onSuggestions
+  )
 
   return { emittedTokens: tokenCount }
 }
 
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { onToken, signal, ...payload } = options
+  const { onToken, onSuggestions, signal, ...payload } = options
 
   try {
-    await requestChat(payload, signal, onToken)
+    await requestChat(payload, signal, onToken, onSuggestions)
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     const isNetworkError = error instanceof TypeError
@@ -141,7 +166,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     if (!shouldRetry) throw error
 
     await sleep(RETRY_DELAY_MS)
-    await requestChat(payload, signal, onToken)
+    await requestChat(payload, signal, onToken, onSuggestions)
   }
 }
 

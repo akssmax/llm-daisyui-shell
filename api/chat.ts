@@ -48,6 +48,65 @@ const SUMMARY_TOKEN_TRIGGER = 12000
 const REQUEST_TIMEOUT_MS = 60_000
 const DEFAULT_MAX_TOKENS = 1200
 
+function parseSuggestions(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    const cleaned = parsed
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean)
+    return Array.from(new Set(cleaned)).slice(0, 4)
+  } catch {
+    return []
+  }
+}
+
+async function generateSuggestions(
+  key: string,
+  model: string,
+  userPrompt: string,
+  assistantResponse: string,
+  signal: AbortSignal
+): Promise<string[]> {
+  if (!assistantResponse.trim()) return []
+
+  const prompt = [
+    "Generate 3 short follow-up suggestions for the user based on this assistant answer.",
+    "Rules:",
+    "- Return strict JSON array only (no markdown).",
+    "- Each suggestion <= 8 words.",
+    "- Suggestions should be actionable and distinct.",
+    "",
+    `User prompt: ${userPrompt}`,
+    "",
+    `Assistant answer: ${assistantResponse}`,
+  ].join("\n")
+
+  const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    body: JSON.stringify({
+      max_tokens: 120,
+      messages: [{ content: prompt, role: "user" }],
+      model,
+      stream: false,
+      temperature: 0.3,
+    }),
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+    signal,
+  })
+
+  if (!response.ok) return []
+
+  const json = await response.json()
+  const content = json?.choices?.[0]?.message?.content
+  if (typeof content !== "string") return []
+  return parseSuggestions(content)
+}
+
 function jsonError(res: ApiResponse, status: number, code: string, message: string) {
   res.status(status).json({ error: { code, message } })
 }
@@ -284,36 +343,63 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let upstreamBuffer = ""
+    let assistantText = ""
+    const processRawEvent = (rawEvent: string) => {
+      const lines = rawEvent.replace(/\r\n/g, "\n").split("\n")
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue
+        const data = line.slice("data:".length).trim()
+        if (!data || data === "[DONE]") continue
+
+        try {
+          const payload = JSON.parse(data)
+          const token = payload?.choices?.[0]?.delta?.content
+          if (typeof token === "string" && token.length > 0) {
+            assistantText += token
+            writeSse(res, "token", { text: token })
+          }
+        } catch {
+          // Ignore malformed upstream chunks.
+        }
+      }
+    }
 
     while (true) {
       const { done, value } = await reader.read()
-      if (done) break
-      upstreamBuffer += decoder.decode(value, { stream: true })
+      if (done) {
+        const trailingEvent = upstreamBuffer.trim()
+        if (trailingEvent) {
+          processRawEvent(trailingEvent)
+        }
+        break
+      }
+      upstreamBuffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n")
 
       let boundary = upstreamBuffer.indexOf("\n\n")
       while (boundary !== -1) {
         const rawEvent = upstreamBuffer.slice(0, boundary)
         upstreamBuffer = upstreamBuffer.slice(boundary + 2)
-
-        const lines = rawEvent.split("\n")
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue
-          const data = line.slice("data:".length).trim()
-          if (!data || data === "[DONE]") continue
-
-          try {
-            const payload = JSON.parse(data)
-            const token = payload?.choices?.[0]?.delta?.content
-            if (typeof token === "string" && token.length > 0) {
-              writeSse(res, "token", { text: token })
-            }
-          } catch {
-            // Ignore malformed upstream chunks.
-          }
-        }
+        processRawEvent(rawEvent)
 
         boundary = upstreamBuffer.indexOf("\n\n")
       }
+    }
+
+    try {
+      const lastUserMessage =
+        [...messages].reverse().find((message) => message.role === "user")?.content ?? ""
+      const suggestions = await generateSuggestions(
+        key,
+        body.model || SUMMARY_MODEL,
+        lastUserMessage,
+        assistantText,
+        controller.signal
+      )
+      if (suggestions.length > 0) {
+        writeSse(res, "suggestions", { suggestions })
+      }
+    } catch {
+      // Suggestions are optional; skip on failure.
     }
 
     writeSse(res, "done", { ok: true })

@@ -119,6 +119,7 @@ export function AIElementsChatShell({ className }: { className?: string }) {
   const [activeBranch, setActiveBranch] = useState<Record<string, number>>({})
   const [selectedModel, setSelectedModel] = useState<MistralModel>("mistral-small-latest")
   const [abortController, setAbortController] = useState<AbortController | null>(null)
+  const [llmSuggestions, setLlmSuggestions] = useState<string[]>([])
 
   const assistant = useMemo(() => messages.find((m) => m.message.role === "assistant"), [messages])
 
@@ -144,6 +145,7 @@ export function AIElementsChatShell({ className }: { className?: string }) {
       ])
 
       setText("")
+      setLlmSuggestions([])
       setStatus("streaming")
 
       const assistantId = `a-${Date.now()}`
@@ -183,6 +185,9 @@ export function AIElementsChatShell({ className }: { className?: string }) {
               })
             )
           },
+          onSuggestions: (suggestions) => {
+            setLlmSuggestions(suggestions)
+          },
           signal: controller.signal,
           temperature: 0.7,
         })
@@ -209,16 +214,6 @@ export function AIElementsChatShell({ className }: { className?: string }) {
       }
     },
     [messages, selectedModel]
-  )
-
-  const suggestions = useMemo(
-    () => [
-      { text: "Analyze data", icon: Sparkles },
-      { text: "Summarize text", icon: FileText },
-      { text: "Search web", icon: Globe },
-      { text: "More", icon: Search },
-    ],
-    []
   )
 
   const handleSuggestionClick = useCallback(
@@ -439,19 +434,21 @@ export function AIElementsChatShell({ className }: { className?: string }) {
           {/* Attachments preview is intentionally hidden for now.
               It will move into the chat input box component later. */}
 
-          <Suggestions className="px-1">
-            {suggestions.map((s) => (
+          {llmSuggestions.length > 0 ? (
+            <Suggestions className="px-1">
+              {llmSuggestions.map((suggestionText) => (
               <Suggestion
-                key={s.text}
+                key={suggestionText}
                 className="font-normal text-foreground"
-                onClick={() => handleSuggestionClick(s.text)}
-                suggestion={s.text}
+                onClick={() => handleSuggestionClick(suggestionText)}
+                suggestion={suggestionText}
               >
-                <s.icon size={16} />
-                {s.text}
+                <Sparkles size={16} />
+                {suggestionText}
               </Suggestion>
-            ))}
-          </Suggestions>
+              ))}
+            </Suggestions>
+          ) : null}
         </div>
       </div>
     </div>

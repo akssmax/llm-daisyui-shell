@@ -31,6 +31,26 @@ const sanitizeSchema = {
   },
 } satisfies SanitizeSchema
 
+function normalizeMarkdown(markdown: string): string {
+  let output = markdown.replaceAll("\r\n", "\n")
+
+  // Streaming responses sometimes send escaped newlines while the block is incomplete.
+  // Convert only when the text has almost no actual line-breaks to avoid corrupting real content.
+  const hasRealNewline = output.includes("\n")
+  if (!hasRealNewline && output.includes("\\n")) {
+    output = output.replaceAll("\\n", "\n")
+  }
+
+  // If a streaming response leaves an unmatched fence open, markdown parsers treat the rest
+  // (including tables) as code. Closing it defensively restores normal rendering.
+  const fenceCount = (output.match(/```/g) ?? []).length
+  if (fenceCount % 2 !== 0) {
+    output = `${output}\n\`\`\``
+  }
+
+  return output
+}
+
 export function MarkdownRenderer({
   markdown,
   className,
@@ -38,6 +58,8 @@ export function MarkdownRenderer({
   markdown: string
   className?: string
 }) {
+  const normalizedMarkdown = normalizeMarkdown(markdown)
+
   const components = {
     callout: markdownComponentRegistry.Callout,
     kpicard: markdownComponentRegistry.KpiCard,
@@ -49,9 +71,7 @@ export function MarkdownRenderer({
   return (
     <div
       className={cn(
-        "prose prose-zinc max-w-none dark:prose-invert",
-        "prose-pre:rounded-lg prose-pre:border prose-pre:border-border prose-pre:bg-muted/40",
-        "prose-code:rounded prose-code:bg-muted/40 prose-code:px-1 prose-code:py-0.5",
+        "chat-markdown prose prose-zinc dark:prose-invert",
         className
       )}
     >
@@ -66,7 +86,7 @@ export function MarkdownRenderer({
         // Safe custom component map (whitelisted only)
         components={components}
       >
-        {markdown}
+        {normalizedMarkdown}
       </ReactMarkdown>
     </div>
   )

@@ -19,9 +19,15 @@ export function Callout({
   }
 
   return (
-    <div className={cn("rounded-xl border p-4 text-sm text-foreground", toneClasses[tone], className)}>
-      {title && <div className="mb-1 text-sm font-medium">{title}</div>}
-      <div className="text-sm text-muted-foreground">{children}</div>
+    <div
+      className={cn(
+        "my-4 rounded-xl border p-5 text-[15px] leading-7 text-foreground",
+        toneClasses[tone],
+        className
+      )}
+    >
+      {title && <div className="mb-2 text-[15px] font-semibold text-foreground">{title}</div>}
+      <div className="text-[15px] leading-7 text-muted-foreground">{children}</div>
     </div>
   )
 }
@@ -36,9 +42,9 @@ export function KpiCard({
   className?: string
 }) {
   return (
-    <div className={cn("rounded-xl border border-border bg-card px-4 py-3", className)}>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-lg font-semibold text-foreground">{value}</div>
+    <div className={cn("my-4 rounded-xl border border-border bg-card px-4 py-4", className)}>
+      <div className="text-sm text-muted-foreground">{label}</div>
+      <div className="text-xl font-semibold leading-tight text-foreground">{value}</div>
     </div>
   )
 }
