@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Bot,
   FileText,
-  FolderKanban,
   Globe,
+  MessageCircle,
   MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
@@ -484,7 +484,7 @@ export function App() {
                       tooltip={thread.title}
                       onClick={() => selectThread(thread.threadId)}
                     >
-                      <FolderKanban />
+                      <MessageCircle />
                       <span>{thread.title}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

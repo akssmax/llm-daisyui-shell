@@ -1,9 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import type { UIMessage } from "ai"
-import type { ToolUIPart } from "ai"
+import type { FileUIPart, ToolUIPart, UIMessage } from "ai"
 
 import {
   Context,
@@ -80,6 +79,20 @@ import {
   ToolOutput,
 } from "@/components/ai-elements/tool"
 import {
+  Queue,
+  QueueItem,
+  QueueItemAction,
+  QueueItemActions,
+  QueueItemContent,
+  QueueItemDescription,
+  QueueItemIndicator,
+  QueueList,
+  QueueSection,
+  QueueSectionContent,
+  QueueSectionLabel,
+  QueueSectionTrigger,
+} from "@/components/ai-elements/queue"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -91,7 +104,8 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer"
 import { streamChat } from "@/lib/llm-service"
-import type { ChatThread } from "@/lib/chat-threads"
+import type { ChatThread, PendingQueueItem } from "@/lib/chat-threads"
+import { nanoid } from "nanoid"
 import { MISTRAL_MODELS, type MistralModel } from "@/lib/llm-types"
 import type { MockChatItem } from "@/lib/mock-chat-data"
 
@@ -100,14 +114,18 @@ import {
   Check,
   Copy,
   Lightbulb,
+  ListOrdered,
   Mic,
   Plus,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
 } from "lucide-react"
 
 type ChatStatus = "ready" | "submitted" | "streaming" | "error"
+
+const EMPTY_PENDING_QUEUE: PendingQueueItem[] = []
 
 type EmptyStateAction = {
   label: string
@@ -245,7 +263,14 @@ export function AIElementsChatShell({
   const [emptyStateActions, setEmptyStateActions] = useState<EmptyStateAction[]>(() =>
     pickRandomEmptyStateActions(EMPTY_STATE_PROMPT_POOL, EMPTY_STATE_PROMPT_COUNT)
   )
+  const processingQueueRef = useRef(false)
   const messages = thread.messages
+  const messagesRef = useRef(messages)
+  const pendingQueue = thread.pendingQueue ?? EMPTY_PENDING_QUEUE
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   const contextMetrics = useMemo(() => {
     const inputTokens = estimateTokenCount(text)
@@ -338,7 +363,7 @@ export function AIElementsChatShell({
     }
   }, [onUpdateThread])
 
-  const handleSubmit = useCallback(
+  const runMessage = useCallback(
     async (message: PromptInputMessage) => {
       const hasText = Boolean(message.text?.trim())
       const hasFiles = Boolean(message.files?.length)
@@ -348,7 +373,7 @@ export function AIElementsChatShell({
 
       const userId = `u-${Date.now()}`
       const userText = message.text || (hasFiles ? "Sent with attachments" : "")
-      const isFirstUserMessage = messages.every((item) => item.message.role !== "user")
+      const isFirstUserMessage = messagesRef.current.every((item) => item.message.role !== "user")
 
       if (isFirstUserMessage && userText.trim()) {
         const initialTitle = userText.trim().slice(0, 72)
@@ -391,7 +416,7 @@ export function AIElementsChatShell({
       setAbortController(controller)
 
       const history = [
-        ...messages.map((item) => ({
+        ...messagesRef.current.map((item) => ({
           content: getMessageText(item.message),
           role: item.message.role,
         })),
@@ -404,16 +429,31 @@ export function AIElementsChatShell({
           messages: history,
           model: selectedModel,
           onToken: (chunk) => {
-            updateThreadMessages((prev) =>
-              prev.map((it) => {
-                if (it.id !== assistantId) return it
-                const previous = getMessageText(it.message)
-                return {
-                  ...it,
-                  message: toTextMessage(it.message.id, "assistant", `${previous}${chunk}`),
-                }
-              })
-            )
+            updateThreadMessages((prev) => {
+              const lastIndex = prev.length - 1
+              const last = prev[lastIndex]
+              if (!last || last.id !== assistantId) {
+                return prev.map((it) =>
+                  it.id === assistantId
+                    ? {
+                        ...it,
+                        message: toTextMessage(
+                          it.message.id,
+                          "assistant",
+                          `${getMessageText(it.message)}${chunk}`
+                        ),
+                      }
+                    : it
+                )
+              }
+              const previous = getMessageText(last.message)
+              const next = prev.slice()
+              next[lastIndex] = {
+                ...last,
+                message: toTextMessage(last.message.id, "assistant", `${previous}${chunk}`),
+              }
+              return next
+            })
           },
           onSuggestions: (suggestions) => {
             setLlmSuggestions(suggestions)
@@ -468,6 +508,13 @@ export function AIElementsChatShell({
         })
         setStatus("ready")
       } catch (error) {
+        const isAbort =
+          (error instanceof DOMException && error.name === "AbortError") ||
+          (error instanceof Error && error.name === "AbortError")
+        if (isAbort) {
+          setStatus("ready")
+          return
+        }
         const errorMessage = error instanceof Error ? error.message : "Failed to get response."
         updateThreadMessages((prev) =>
           prev.map((it) =>
@@ -488,8 +535,76 @@ export function AIElementsChatShell({
         setAbortController(null)
       }
     },
-    [messages, onUpdateThread, refineChatTitle, selectedModel, thread.threadId, updateThreadMessages]
+    [onUpdateThread, refineChatTitle, selectedModel, thread.threadId, updateThreadMessages]
   )
+
+  const handleSubmit = useCallback(
+    async (message: PromptInputMessage) => {
+      const hasText = Boolean(message.text?.trim())
+      const hasFiles = Boolean(message.files?.length)
+      if (!hasText && !hasFiles) return
+
+      const isBusy = status === "submitted" || status === "streaming"
+      const queueLen = thread.pendingQueue?.length ?? 0
+      if (!isBusy && queueLen === 0) {
+        await runMessage(message)
+        return
+      }
+
+      const userText = message.text?.trim() || (hasFiles ? "Sent with attachments" : "")
+      onUpdateThread(thread.threadId, (current) => ({
+        ...current,
+        pendingQueue: [
+          ...(current.pendingQueue ?? []),
+          {
+            id: `q-${Date.now()}-${nanoid(8)}`,
+            text: userText,
+            files: [...(message.files ?? [])] as FileUIPart[],
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }))
+    },
+    [onUpdateThread, runMessage, status, thread.pendingQueue, thread.threadId]
+  )
+
+  useEffect(() => {
+    const isBusy = status === "submitted" || status === "streaming"
+    if (isBusy) return
+    if (pendingQueue.length === 0) return
+    if (processingQueueRef.current) return
+
+    processingQueueRef.current = true
+    const head = pendingQueue[0]
+    const rest = pendingQueue.slice(1)
+    onUpdateThread(thread.threadId, (current) => ({
+      ...current,
+      pendingQueue: rest,
+    }))
+
+    const payload: PromptInputMessage = {
+      text: head.text,
+      files: head.files,
+    }
+
+    void runMessage(payload).finally(() => {
+      processingQueueRef.current = false
+    })
+  }, [onUpdateThread, pendingQueue, runMessage, status, thread.threadId])
+
+  const removeFromQueue = useCallback(
+    (itemId: string) => {
+      onUpdateThread(thread.threadId, (current) => ({
+        ...current,
+        pendingQueue: (current.pendingQueue ?? []).filter((item) => item.id !== itemId),
+      }))
+    },
+    [onUpdateThread, thread.threadId]
+  )
+
+  const stopStreaming = useCallback(() => {
+    abortController?.abort()
+  }, [abortController])
 
   const handleSuggestionClick = useCallback(
     (suggestionText: string) => {
@@ -740,8 +855,72 @@ export function AIElementsChatShell({
 
       <div className="border-t border-border bg-background">
         <div className="mx-auto grid max-w-3xl gap-3 p-4">
-          {/* Plan and Queue are intentionally hidden for now.
-              They will move into the chat input box component later. */}
+          {/* Plan is intentionally hidden for now; queue lives above the prompt input. */}
+          {pendingQueue.length > 0 ? (
+            <Queue>
+              <div className="flex items-start gap-2">
+                <QueueSection defaultOpen className="min-w-0 flex-1">
+                  <QueueSectionTrigger className="w-full">
+                    <QueueSectionLabel
+                      count={pendingQueue.length}
+                      icon={<ListOrdered className="size-4" />}
+                      label="queued"
+                    />
+                  </QueueSectionTrigger>
+                  <QueueSectionContent>
+                    <QueueList>
+                      {status === "submitted" || status === "streaming" ? (
+                        <QueueItem className="flex flex-row items-start gap-2 bg-muted/40 py-2">
+                          <QueueItemIndicator />
+                          <QueueItemContent className="text-foreground">
+                            Generating response...
+                          </QueueItemContent>
+                        </QueueItem>
+                      ) : null}
+                      {pendingQueue.map((item) => (
+                        <QueueItem
+                          key={item.id}
+                          className="flex flex-row items-start gap-2 py-2"
+                        >
+                          <QueueItemIndicator />
+                          <div className="min-w-0 flex-1 text-left">
+                            <QueueItemContent className="text-foreground">
+                              {item.text || "Sent with attachments"}
+                            </QueueItemContent>
+                            {item.files.length > 0 ? (
+                              <QueueItemDescription>
+                                {item.files.length} file(s)
+                              </QueueItemDescription>
+                            ) : null}
+                          </div>
+                          <QueueItemActions className="shrink-0 self-center">
+                            <QueueItemAction
+                              aria-label="Remove from queue"
+                              onClick={() => removeFromQueue(item.id)}
+                              type="button"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </QueueItemAction>
+                          </QueueItemActions>
+                        </QueueItem>
+                      ))}
+                    </QueueList>
+                  </QueueSectionContent>
+                </QueueSection>
+                {status === "submitted" || status === "streaming" ? (
+                  <Button
+                    className="shrink-0 rounded-xl"
+                    onClick={stopStreaming}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Stop
+                  </Button>
+                ) : null}
+              </div>
+            </Queue>
+          ) : null}
 
           <PromptInputProvider>
             <PromptInput maxFileSize={5 * 1024 * 1024} maxFiles={4} onSubmit={handleSubmit}>
@@ -795,14 +974,7 @@ export function AIElementsChatShell({
                   >
                     <Mic className="size-4" />
                   </PromptInputButton>
-                  <PromptInputSubmit
-                    disabled={status === "streaming"}
-                    onStop={() => {
-                      abortController?.abort()
-                      setStatus("ready")
-                    }}
-                    status={status === "streaming" ? "streaming" : undefined}
-                  />
+                  <PromptInputSubmit />
                 </PromptInputTools>
               </PromptInputFooter>
             </PromptInput>

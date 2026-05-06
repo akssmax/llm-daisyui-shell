@@ -1,8 +1,16 @@
+import type { FileUIPart } from "ai"
 import { nanoid } from "nanoid"
 
 import type { MockChatItem } from "@/lib/mock-chat-data"
 
 const THREADS_STORAGE_KEY = "chatShell.threads.v1"
+
+export type PendingQueueItem = {
+  id: string
+  text: string
+  files: FileUIPart[]
+  createdAt: string
+}
 
 export type ChatThread = {
   threadId: string
@@ -10,6 +18,7 @@ export type ChatThread = {
   createdAt: string
   updatedAt: string
   messages: MockChatItem[]
+  pendingQueue?: PendingQueueItem[]
 }
 
 function nowIso(): string {
@@ -28,15 +37,30 @@ function canUseStorage(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined"
 }
 
+function isPendingQueueItem(value: unknown): value is PendingQueueItem {
+  if (!value || typeof value !== "object") return false
+  const row = value as Record<string, unknown>
+  return (
+    typeof row.id === "string" &&
+    typeof row.text === "string" &&
+    typeof row.createdAt === "string" &&
+    Array.isArray(row.files)
+  )
+}
+
 function isThreadShape(value: unknown): value is ChatThread {
   if (!value || typeof value !== "object") return false
   const item = value as Partial<ChatThread>
+  const pendingOk =
+    item.pendingQueue === undefined ||
+    (Array.isArray(item.pendingQueue) && item.pendingQueue.every(isPendingQueueItem))
   return (
     typeof item.threadId === "string" &&
     typeof item.title === "string" &&
     typeof item.createdAt === "string" &&
     typeof item.updatedAt === "string" &&
-    Array.isArray(item.messages)
+    Array.isArray(item.messages) &&
+    pendingOk
   )
 }
 
@@ -66,7 +90,7 @@ export function loadChatThreads(): ChatThread[] {
 
 export function saveChatThreads(threads: ChatThread[]): void {
   if (!canUseStorage()) return
-  window.localStorage.setItem(THREADS_STORAGE_KEY, JSON.stringify(sortThreads(threads)))
+  window.localStorage.setItem(THREADS_STORAGE_KEY, JSON.stringify(threads))
 }
 
 export function upsertChatThread(threads: ChatThread[], thread: ChatThread): ChatThread[] {

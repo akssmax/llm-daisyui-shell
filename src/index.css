@@ -215,11 +215,11 @@
   }
 
   .chat-markdown :where(ul) {
-    @apply my-3 list-disc pl-5;
+    @apply my-3 list-inside list-disc pl-2;
   }
 
   .chat-markdown :where(ol) {
-    @apply my-3 list-decimal pl-5;
+    @apply my-3 list-inside list-decimal pl-2;
   }
 
   .chat-markdown :where(li) {

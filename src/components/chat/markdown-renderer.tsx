@@ -1,3 +1,4 @@
+import { memo, useMemo, type ComponentProps } from "react"
 import ReactMarkdown from "react-markdown"
 import type { Components } from "react-markdown"
 import rehypeHighlight from "rehype-highlight"
@@ -31,6 +32,12 @@ const sanitizeSchema = {
   },
 } satisfies SanitizeSchema
 
+const MARKDOWN_COMPONENTS = {
+  callout: markdownComponentRegistry.Callout,
+  kpicard: markdownComponentRegistry.KpiCard,
+  a: (props: ComponentProps<"a">) => <a {...props} target="_blank" rel="noreferrer" />,
+} as unknown as Components
+
 function normalizeMarkdown(markdown: string): string {
   let output = markdown.replaceAll("\r\n", "\n")
 
@@ -51,22 +58,14 @@ function normalizeMarkdown(markdown: string): string {
   return output
 }
 
-export function MarkdownRenderer({
+export const MarkdownRenderer = memo(function MarkdownRenderer({
   markdown,
   className,
 }: {
   markdown: string
   className?: string
 }) {
-  const normalizedMarkdown = normalizeMarkdown(markdown)
-
-  const components = {
-    callout: markdownComponentRegistry.Callout,
-    kpicard: markdownComponentRegistry.KpiCard,
-    a: (props: React.ComponentProps<"a">) => (
-      <a {...props} target="_blank" rel="noreferrer" />
-    ),
-  } as unknown as Components
+  const normalizedMarkdown = useMemo(() => normalizeMarkdown(markdown), [markdown])
 
   return (
     <div
@@ -84,11 +83,10 @@ export function MarkdownRenderer({
           rehypeHighlight,
         ]}
         // Safe custom component map (whitelisted only)
-        components={components}
+        components={MARKDOWN_COMPONENTS}
       >
         {normalizedMarkdown}
       </ReactMarkdown>
     </div>
   )
-}
-
+})
