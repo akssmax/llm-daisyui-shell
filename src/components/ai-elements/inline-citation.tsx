@@ -30,7 +30,7 @@ export const InlineCitation = ({
   ...props
 }: InlineCitationProps) => (
   <span
-    className={cn("group inline items-center gap-1", className)}
+    className={cn("group inline-flex flex-wrap items-center gap-1.5", className)}
     {...props}
   />
 );
@@ -86,7 +86,7 @@ export const InlineCitationCardBody = ({
   className,
   ...props
 }: InlineCitationCardBodyProps) => (
-  <HoverCardContent className={cn("relative w-80 p-0", className)} {...props} />
+  <HoverCardContent className={cn("relative w-80 p-3", className)} {...props} />
 );
 
 const CarouselApiContext = createContext<CarouselApi | undefined>(undefined);
@@ -261,7 +261,7 @@ export const InlineCitationSource = ({
   children,
   ...props
 }: InlineCitationSourceProps) => (
-  <div className={cn("space-y-1", className)} {...props}>
+  <div className={cn("space-y-2", className)} {...props}>
     {title && (
       <h4 className="truncate font-medium text-sm leading-tight">{title}</h4>
     )}
