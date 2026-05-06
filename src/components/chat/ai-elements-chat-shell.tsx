@@ -90,6 +90,7 @@ import type { MockChatItem } from "@/lib/mock-chat-data"
 
 import {
   CheckCircle2,
+  Check,
   Copy,
   Search,
   Sparkles,
@@ -118,8 +119,17 @@ export function AIElementsChatShell({ className }: { className?: string }) {
   const [selectedModel, setSelectedModel] = useState<MistralModel>("mistral-small-latest")
   const [abortController, setAbortController] = useState<AbortController | null>(null)
   const [llmSuggestions, setLlmSuggestions] = useState<string[]>([])
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
 
   const assistant = useMemo(() => messages.find((m) => m.message.role === "assistant"), [messages])
+  const latestAssistantMessageId = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.message.role === "assistant") {
+        return messages[index]?.id ?? null
+      }
+    }
+    return null
+  }, [messages])
 
   useEffect(() => {
     return () => {
@@ -150,6 +160,7 @@ export function AIElementsChatShell({ className }: { className?: string }) {
       const assistantItem = {
         id: assistantId,
         message: toTextMessage(assistantId, "assistant", ""),
+        meta: {},
       }
 
       setMessages((prev) => [...prev, assistantItem])
@@ -168,7 +179,6 @@ export function AIElementsChatShell({ className }: { className?: string }) {
       try {
         await streamChat({
           attachments: message.files,
-          maxTokens: 1200,
           messages: history,
           model: selectedModel,
           onToken: (chunk) => {
@@ -185,6 +195,51 @@ export function AIElementsChatShell({ className }: { className?: string }) {
           },
           onSuggestions: (suggestions) => {
             setLlmSuggestions(suggestions)
+          },
+          onReasoning: (reasoning) => {
+            setMessages((prev) =>
+              prev.map((it) =>
+                it.id === assistantId
+                  ? {
+                      ...it,
+                      meta: {
+                        ...(it.meta ?? {}),
+                        reasoning,
+                      },
+                    }
+                  : it
+              )
+            )
+          },
+          onSources: (sources) => {
+            setMessages((prev) =>
+              prev.map((it) =>
+                it.id === assistantId
+                  ? {
+                      ...it,
+                      meta: {
+                        ...(it.meta ?? {}),
+                        sources,
+                      },
+                    }
+                  : it
+              )
+            )
+          },
+          onCitations: (citations) => {
+            setMessages((prev) =>
+              prev.map((it) =>
+                it.id === assistantId
+                  ? {
+                      ...it,
+                      meta: {
+                        ...(it.meta ?? {}),
+                        citations,
+                      },
+                    }
+                  : it
+              )
+            )
           },
           signal: controller.signal,
           temperature: 0.7,
@@ -276,6 +331,11 @@ export function AIElementsChatShell({ className }: { className?: string }) {
               const meta = item.meta
               const branchIndex = activeBranch[item.id] ?? 0
               const branchCount = item.branches?.length ?? 0
+              const isLatestAssistantMessage =
+                msg.role === "assistant" && item.id === latestAssistantMessageId
+              const showFeedbackBar =
+                msg.role === "assistant" &&
+                (!isLatestAssistantMessage || status !== "streaming")
 
               return (
                 <MessageBranch
@@ -353,26 +413,64 @@ export function AIElementsChatShell({ className }: { className?: string }) {
                           </div>
                         ) : null}
 
-                        <MessageActions className="rounded-md border border-border/60 bg-muted/40 p-1 opacity-85">
-                          <MessageAction
-                            tooltip="Copy message"
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={async () => {
-                              const text = getMessageText(msg)
-                              if (!text) return
-                              await navigator.clipboard.writeText(text)
-                            }}
-                          >
-                            <Copy className="size-4" />
-                          </MessageAction>
-                          <MessageAction tooltip="Helpful" variant="ghost" size="icon-sm">
-                            <ThumbsUp className="size-4" />
-                          </MessageAction>
-                          <MessageAction tooltip="Not helpful" variant="ghost" size="icon-sm">
-                            <ThumbsDown className="size-4" />
-                          </MessageAction>
-                        </MessageActions>
+                        {showFeedbackBar ? (
+                          <MessageActions className="w-fit items-center gap-1 rounded-xl border border-border/70 bg-card/80 p-1 shadow-xs backdrop-blur supports-[backdrop-filter]:bg-card/65">
+                            <MessageAction
+                              tooltip="Copy message"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="rounded-lg text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                              onClick={async () => {
+                                const text = getMessageText(msg)
+                                if (!text) return
+                                await navigator.clipboard.writeText(text)
+                                setCopiedMessageId(item.id)
+                                window.setTimeout(() => {
+                                  setCopiedMessageId((current) =>
+                                    current === item.id ? null : current
+                                  )
+                                }, 1600)
+                              }}
+                            >
+                              {copiedMessageId === item.id ? (
+                                <Check className="size-4" />
+                              ) : (
+                                <Copy className="size-4" />
+                              )}
+                            </MessageAction>
+                            <MessageAction
+                              tooltip="Helpful"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="rounded-lg text-muted-foreground hover:bg-emerald-500/12 hover:text-emerald-600 dark:hover:text-emerald-400"
+                            >
+                              <ThumbsUp className="size-4" />
+                            </MessageAction>
+                            <MessageAction
+                              tooltip="Not helpful"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            >
+                              <ThumbsDown className="size-4" />
+                            </MessageAction>
+                          </MessageActions>
+                        ) : null}
+                        {isLatestAssistantMessage && llmSuggestions.length > 0 ? (
+                          <Suggestions className="px-1">
+                            {llmSuggestions.map((suggestionText) => (
+                              <Suggestion
+                                key={suggestionText}
+                                className="font-normal text-foreground"
+                                onClick={() => handleSuggestionClick(suggestionText)}
+                                suggestion={suggestionText}
+                              >
+                                <Sparkles size={16} />
+                                {suggestionText}
+                              </Suggestion>
+                            ))}
+                          </Suggestions>
+                        ) : null}
                       </div>
                     </Message>
                   </MessageBranchContent>
@@ -432,21 +530,6 @@ export function AIElementsChatShell({ className }: { className?: string }) {
           {/* Attachments preview is intentionally hidden for now.
               It will move into the chat input box component later. */}
 
-          {llmSuggestions.length > 0 ? (
-            <Suggestions className="px-1">
-              {llmSuggestions.map((suggestionText) => (
-              <Suggestion
-                key={suggestionText}
-                className="font-normal text-foreground"
-                onClick={() => handleSuggestionClick(suggestionText)}
-                suggestion={suggestionText}
-              >
-                <Sparkles size={16} />
-                {suggestionText}
-              </Suggestion>
-              ))}
-            </Suggestions>
-          ) : null}
         </div>
       </div>
     </div>

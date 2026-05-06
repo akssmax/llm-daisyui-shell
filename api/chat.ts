@@ -45,8 +45,67 @@ const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 const MAX_MESSAGES = 200
 const SUMMARY_MESSAGE_TRIGGER = 40
 const SUMMARY_TOKEN_TRIGGER = 12000
-const REQUEST_TIMEOUT_MS = 60_000
-const DEFAULT_MAX_TOKENS = 1200
+const DEFAULT_MAX_TOKENS = 2400
+const MAX_TOKENS_CAP = 12000
+const DEFAULT_TIMEOUT_MS = 60_000
+const MAX_TIMEOUT_MS = 420_000
+
+type GroundedSource = { href: string; title: string }
+type GroundedCitation = { href: string; label: string }
+
+function extractGroundedLinks(text: string): GroundedSource[] {
+  if (!text.trim()) return []
+  const links = new Set<string>()
+  const markdownLinkRegex = /\[[^\]]+\]\((https?:\/\/[^)\s]+)\)/g
+  const urlRegex = /https?:\/\/[^\s)]+/g
+
+  let markdownMatch = markdownLinkRegex.exec(text)
+  while (markdownMatch) {
+    links.add(markdownMatch[1])
+    markdownMatch = markdownLinkRegex.exec(text)
+  }
+
+  const cleanedText = text.replace(markdownLinkRegex, "")
+  const urlMatches = cleanedText.match(urlRegex) ?? []
+  for (const url of urlMatches) {
+    links.add(url)
+  }
+
+  return Array.from(links)
+    .slice(0, 6)
+    .map((href) => {
+      try {
+        const parsed = new URL(href)
+        return {
+          href,
+          title: parsed.hostname.replace(/^www\./, ""),
+        }
+      } catch {
+        return null
+      }
+    })
+    .filter((item): item is GroundedSource => Boolean(item))
+}
+
+function toGroundedCitations(sources: GroundedSource[]): GroundedCitation[] {
+  return sources.map((source, index) => ({
+    href: source.href,
+    label: `Reference ${index + 1}: ${source.title}`,
+  }))
+}
+
+function buildReasoningSummary(sources: GroundedSource[]): { content: string; durationSeconds?: number } {
+  if (sources.length === 0) {
+    return { content: "" }
+  }
+  const domains = sources.slice(0, 2).map((source) => source.title)
+  const domainText = domains.join(", ")
+  const content =
+    sources.length === 1
+      ? `Answer grounded in 1 cited source (${domainText}).`
+      : `Answer grounded in ${sources.length} cited sources (e.g. ${domainText}).`
+  return { content }
+}
 
 function parseSuggestions(raw: string): string[] {
   try {
@@ -119,6 +178,27 @@ function writeSse(res: ApiResponse, event: string, data: unknown) {
 function estimateTokens(messages: ChatMessageInput[]): number {
   const text = messages.map((m) => m.content).join("\n")
   return Math.ceil(text.length / 4)
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function resolveMaxTokens(requestedMaxTokens: number | undefined, messages: ChatMessageInput[]): number {
+  if (typeof requestedMaxTokens === "number" && Number.isFinite(requestedMaxTokens)) {
+    return clamp(Math.floor(requestedMaxTokens), 256, MAX_TOKENS_CAP)
+  }
+
+  const inputTokens = estimateTokens(messages)
+  // Scale output budget with conversation size while keeping an upper bound.
+  const adaptive = Math.ceil(DEFAULT_MAX_TOKENS + inputTokens * 0.35)
+  return clamp(adaptive, DEFAULT_MAX_TOKENS, MAX_TOKENS_CAP)
+}
+
+function resolveTimeoutMs(maxTokens: number): number {
+  // Time budget scales with output size; clamp to protect server runtime.
+  const adaptive = DEFAULT_TIMEOUT_MS + Math.ceil(maxTokens * 25)
+  return clamp(adaptive, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
 }
 
 function getDataUrlBytes(url: string): number {
@@ -300,18 +380,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort("timeout"), REQUEST_TIMEOUT_MS)
+  let timeout: ReturnType<typeof setTimeout> | null = null
 
   try {
     const messages = body.messages || []
     const attachments = body.attachments || []
     const summarized = await summarizeHistory(key, messages, controller.signal)
     const finalMessages = summarized || messages
+    const resolvedMaxTokens = resolveMaxTokens(body.maxTokens, finalMessages)
+    const timeoutMs = resolveTimeoutMs(resolvedMaxTokens)
+    timeout = setTimeout(() => controller.abort("timeout"), timeoutMs)
     const mistralMessages = toMistralMessages(finalMessages, attachments)
 
     const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
       body: JSON.stringify({
-        max_tokens: body.maxTokens ?? DEFAULT_MAX_TOKENS,
+        max_tokens: resolvedMaxTokens,
         messages: mistralMessages,
         model: body.model,
         stream: true,
@@ -353,8 +436,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
         try {
           const payload = JSON.parse(data)
-          const token = payload?.choices?.[0]?.delta?.content
-          if (typeof token === "string" && token.length > 0) {
+          const choice = payload?.choices?.[0]
+          const tokenFromDelta = choice?.delta?.content
+          const tokenFromMessage = choice?.message?.content
+          const token =
+            typeof tokenFromDelta === "string" && tokenFromDelta.length > 0
+              ? tokenFromDelta
+              : typeof tokenFromMessage === "string" && tokenFromMessage.length > 0
+                ? tokenFromMessage
+                : null
+
+          if (token) {
             assistantText += token
             writeSse(res, "token", { text: token })
           }
@@ -398,6 +490,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (suggestions.length > 0) {
         writeSse(res, "suggestions", { suggestions })
       }
+
+      const groundedSources = extractGroundedLinks(assistantText)
+      if (groundedSources.length > 0) {
+        writeSse(res, "sources", { sources: groundedSources })
+        writeSse(res, "citations", { citations: toGroundedCitations(groundedSources) })
+        const reasoning = buildReasoningSummary(groundedSources)
+        if (reasoning.content) {
+          writeSse(res, "reasoning", { reasoning })
+        }
+      }
     } catch {
       // Suggestions are optional; skip on failure.
     }
@@ -431,7 +533,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     })
     res.end()
   } finally {
-    clearTimeout(timeout)
+    if (timeout) clearTimeout(timeout)
   }
 }
 

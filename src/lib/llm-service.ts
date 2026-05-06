@@ -1,8 +1,15 @@
 import type { LlmChatRequest } from "@/lib/llm-types"
+import type { MockAssistantMeta, MockSource } from "@/lib/mock-chat-data"
+
+type Citation = NonNullable<MockAssistantMeta["citations"]>[number]
+type ReasoningMeta = NonNullable<MockAssistantMeta["reasoning"]>
 
 export interface StreamChatOptions extends LlmChatRequest {
   onToken: (token: string) => void
   onSuggestions?: (suggestions: string[]) => void
+  onReasoning?: (reasoning: ReasoningMeta) => void
+  onSources?: (sources: MockSource[]) => void
+  onCitations?: (citations: Citation[]) => void
   signal?: AbortSignal
 }
 
@@ -45,7 +52,10 @@ function parseSseEvent(rawEvent: string): { event: string; data: string } | null
 async function streamSseResponse(
   response: Response,
   onToken: (token: string) => void,
-  onSuggestions?: (suggestions: string[]) => void
+  onSuggestions?: (suggestions: string[]) => void,
+  onReasoning?: (reasoning: ReasoningMeta) => void,
+  onSources?: (sources: MockSource[]) => void,
+  onCitations?: (citations: Citation[]) => void
 ): Promise<void> {
   if (!response.body) {
     throw new Error("Missing response body from /api/chat")
@@ -75,6 +85,54 @@ async function streamSseResponse(
         }
       } catch {
         // Ignore malformed suggestions payloads.
+      }
+    } else if (parsed.event === "reasoning") {
+      try {
+        const payload = JSON.parse(parsed.data) as { reasoning?: { content?: unknown; durationSeconds?: unknown } }
+        if (typeof payload.reasoning?.content !== "string" || !payload.reasoning.content.trim()) return
+        onReasoning?.({
+          content: payload.reasoning.content,
+          durationSeconds:
+            typeof payload.reasoning.durationSeconds === "number"
+              ? payload.reasoning.durationSeconds
+              : undefined,
+        })
+      } catch {
+        // Ignore malformed reasoning payloads.
+      }
+    } else if (parsed.event === "sources") {
+      try {
+        const payload = JSON.parse(parsed.data) as { sources?: unknown }
+        if (!Array.isArray(payload.sources)) return
+        const sources = payload.sources
+          .filter(
+            (item): item is MockSource =>
+              Boolean(item) &&
+              typeof item === "object" &&
+              typeof (item as MockSource).href === "string" &&
+              typeof (item as MockSource).title === "string"
+          )
+          .filter((source) => source.href.trim().length > 0 && source.title.trim().length > 0)
+        if (sources.length > 0) onSources?.(sources)
+      } catch {
+        // Ignore malformed sources payloads.
+      }
+    } else if (parsed.event === "citations") {
+      try {
+        const payload = JSON.parse(parsed.data) as { citations?: unknown }
+        if (!Array.isArray(payload.citations)) return
+        const citations = payload.citations
+          .filter(
+            (item): item is Citation =>
+              Boolean(item) &&
+              typeof item === "object" &&
+              typeof (item as Citation).href === "string" &&
+              typeof (item as Citation).label === "string"
+          )
+          .filter((citation) => citation.href.trim().length > 0 && citation.label.trim().length > 0)
+        if (citations.length > 0) onCitations?.(citations)
+      } catch {
+        // Ignore malformed citations payloads.
       }
     } else if (parsed.event === "error") {
       try {
@@ -115,7 +173,10 @@ async function requestChat(
   payload: LlmChatRequest,
   signal: AbortSignal | undefined,
   onToken: (token: string) => void,
-  onSuggestions?: (suggestions: string[]) => void
+  onSuggestions?: (suggestions: string[]) => void,
+  onReasoning?: (reasoning: ReasoningMeta) => void,
+  onSources?: (sources: MockSource[]) => void,
+  onCitations?: (citations: Citation[]) => void
 ): Promise<{ emittedTokens: number }> {
   const response = await fetch("/api/chat", {
     body: JSON.stringify(payload),
@@ -145,17 +206,20 @@ async function requestChat(
       tokenCount += 1
       onToken(token)
     },
-    onSuggestions
+    onSuggestions,
+    onReasoning,
+    onSources,
+    onCitations
   )
 
   return { emittedTokens: tokenCount }
 }
 
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { onToken, onSuggestions, signal, ...payload } = options
+  const { onToken, onSuggestions, onReasoning, onSources, onCitations, signal, ...payload } = options
 
   try {
-    await requestChat(payload, signal, onToken, onSuggestions)
+    await requestChat(payload, signal, onToken, onSuggestions, onReasoning, onSources, onCitations)
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     const isNetworkError = error instanceof TypeError
@@ -166,7 +230,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     if (!shouldRetry) throw error
 
     await sleep(RETRY_DELAY_MS)
-    await requestChat(payload, signal, onToken, onSuggestions)
+    await requestChat(payload, signal, onToken, onSuggestions, onReasoning, onSources, onCitations)
   }
 }
 
