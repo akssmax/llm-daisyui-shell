@@ -32,6 +32,9 @@ type ChatRequestBody = {
   attachments?: AttachmentInput[]
   temperature?: number
   maxTokens?: number
+  memoryContext?: string
+  retrievedContext?: string
+  sessionSummary?: string
 }
 
 const MISTRAL_MODELS = new Set([
@@ -49,6 +52,7 @@ const DEFAULT_MAX_TOKENS = 2400
 const MAX_TOKENS_CAP = 12000
 const DEFAULT_TIMEOUT_MS = 60_000
 const MAX_TIMEOUT_MS = 420_000
+const SUGGESTIONS_BUDGET_MS = 350
 
 type GroundedSource = { href: string; title: string }
 type GroundedCitation = { href: string; label: string }
@@ -166,6 +170,19 @@ async function generateSuggestions(
   return parseSuggestions(content)
 }
 
+async function generateSuggestionsWithBudget(
+  key: string,
+  model: string,
+  userPrompt: string,
+  assistantResponse: string,
+  signal: AbortSignal
+): Promise<string[]> {
+  return Promise.race([
+    generateSuggestions(key, model, userPrompt, assistantResponse, signal),
+    new Promise<string[]>((resolve) => setTimeout(() => resolve([]), SUGGESTIONS_BUDGET_MS)),
+  ])
+}
+
 function jsonError(res: ApiResponse, status: number, code: string, message: string) {
   res.status(status).json({ error: { code, message } })
 }
@@ -225,6 +242,16 @@ function validateRequest(body: ChatRequestBody): { ok: true } | { ok: false; sta
     if (!["system", "user", "assistant"].includes(message.role) || typeof message.content !== "string") {
       return { code: "invalid_message_shape", message: "Each message requires role and string content.", ok: false, status: 400 }
     }
+  }
+
+  if (body.memoryContext !== undefined && typeof body.memoryContext !== "string") {
+    return { code: "invalid_memory_context", message: "memoryContext must be a string.", ok: false, status: 400 }
+  }
+  if (body.retrievedContext !== undefined && typeof body.retrievedContext !== "string") {
+    return { code: "invalid_retrieved_context", message: "retrievedContext must be a string.", ok: false, status: 400 }
+  }
+  if (body.sessionSummary !== undefined && typeof body.sessionSummary !== "string") {
+    return { code: "invalid_session_summary", message: "sessionSummary must be a string.", ok: false, status: 400 }
   }
 
   if (body.attachments && !Array.isArray(body.attachments)) {
@@ -385,8 +412,27 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     const messages = body.messages || []
     const attachments = body.attachments || []
+    const memoryPrefix: ChatMessageInput[] = []
+    if (body.memoryContext?.trim()) {
+      memoryPrefix.push({
+        role: "system",
+        content: `User memory:\n${body.memoryContext.trim()}`,
+      })
+    }
+    if (body.retrievedContext?.trim()) {
+      memoryPrefix.push({
+        role: "system",
+        content: `Retrieved context:\n${body.retrievedContext.trim()}`,
+      })
+    }
+    if (body.sessionSummary?.trim()) {
+      memoryPrefix.push({
+        role: "system",
+        content: `Session summary:\n${body.sessionSummary.trim()}`,
+      })
+    }
     const summarized = await summarizeHistory(key, messages, controller.signal)
-    const finalMessages = summarized || messages
+    const finalMessages = [...memoryPrefix, ...(summarized || messages)]
     const resolvedMaxTokens = resolveMaxTokens(body.maxTokens, finalMessages)
     const timeoutMs = resolveTimeoutMs(resolvedMaxTokens)
     timeout = setTimeout(() => controller.abort("timeout"), timeoutMs)
@@ -480,7 +526,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     try {
       const lastUserMessage =
         [...messages].reverse().find((message) => message.role === "user")?.content ?? ""
-      const suggestions = await generateSuggestions(
+      const suggestions = await generateSuggestionsWithBudget(
         key,
         body.model || SUMMARY_MODEL,
         lastUserMessage,

@@ -255,7 +255,8 @@
   }
 
   .chat-markdown :where(table) {
-    @apply my-4 block w-full overflow-x-auto border-collapse rounded-lg border border-base-content/10;
+    @apply my-4 block w-full max-w-full overflow-x-auto border-collapse rounded-lg border border-base-content/10;
+    table-layout: fixed;
   }
 
   .chat-markdown :where(thead) {
