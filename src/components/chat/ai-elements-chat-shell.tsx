@@ -86,6 +86,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer"
@@ -96,9 +97,9 @@ import type { MockChatItem } from "@/lib/mock-chat-data"
 
 import {
   Brain,
-  CheckCircle2,
   Check,
   Copy,
+  Lightbulb,
   Mic,
   Plus,
   Sparkles,
@@ -107,6 +108,76 @@ import {
 } from "lucide-react"
 
 type ChatStatus = "ready" | "submitted" | "streaming" | "error"
+
+type EmptyStateAction = {
+  label: string
+  prompt: string
+}
+
+const EMPTY_STATE_PROMPT_POOL: EmptyStateAction[] = [
+  { label: "Plan my day", prompt: "Create a focused plan for my day with priorities and time blocks." },
+  { label: "Weekly goals", prompt: "Help me define 5 realistic goals for this week with measurable outcomes." },
+  { label: "Project kickoff", prompt: "Draft a project kickoff checklist with owners, milestones, and risks." },
+  { label: "Meeting prep", prompt: "Prepare a concise agenda and talking points for my upcoming team meeting." },
+  { label: "Decision memo", prompt: "Write a one-page decision memo comparing two implementation options." },
+  { label: "Status update", prompt: "Draft a crisp weekly status update with wins, blockers, and next steps." },
+  { label: "Email draft", prompt: "Write a professional follow-up email after a product demo call." },
+  { label: "LinkedIn post", prompt: "Write a polished first draft for a LinkedIn post about AI workflows." },
+  { label: "Blog outline", prompt: "Create a detailed blog post outline on improving onboarding conversion." },
+  { label: "Landing page copy", prompt: "Draft high-converting hero, features, and CTA copy for a landing page." },
+  { label: "Ad ideas", prompt: "Generate 10 ad copy ideas for a productivity app targeting startup founders." },
+  { label: "Pitch deck story", prompt: "Build a narrative arc for a 10-slide startup pitch deck." },
+  { label: "Research summary", prompt: "Summarize this topic into key insights, trends, and implications." },
+  { label: "Competitor analysis", prompt: "Compare top competitors across positioning, pricing, and feature gaps." },
+  { label: "Market sizing", prompt: "Estimate TAM/SAM/SOM for an AI recruiting assistant product." },
+  { label: "Customer personas", prompt: "Create 3 customer personas with pains, goals, and buying triggers." },
+  { label: "Interview questions", prompt: "Generate user interview questions to validate a new product idea." },
+  { label: "Survey design", prompt: "Create a short customer survey with neutral, bias-free questions." },
+  { label: "Feature prioritization", prompt: "Prioritize these features using RICE and explain the ranking." },
+  { label: "Roadmap draft", prompt: "Draft a 90-day product roadmap with themes and milestones." },
+  { label: "Bug triage", prompt: "Help triage these bugs by severity, impact, and suggested fixes." },
+  { label: "Release notes", prompt: "Write clear release notes for a new version with highlights and fixes." },
+  { label: "PR review checklist", prompt: "Create a practical pull request review checklist for our team." },
+  { label: "Refactor plan", prompt: "Propose a safe refactor plan with phases, tests, and rollback strategy." },
+  { label: "API design", prompt: "Design a clean REST API for task management including endpoints and payloads." },
+  { label: "Test strategy", prompt: "Create a test strategy for a React app covering unit, integration, and e2e." },
+  { label: "Performance audit", prompt: "List likely frontend performance bottlenecks and how to fix each one." },
+  { label: "Security review", prompt: "Run a lightweight security review checklist for a web application." },
+  { label: "Data model", prompt: "Design a simple relational schema for users, teams, and projects." },
+  { label: "SQL help", prompt: "Write a SQL query to find monthly active users with a 30-day retention view." },
+  { label: "Dashboard metrics", prompt: "Suggest the most useful metrics for a SaaS executive dashboard." },
+  { label: "Analyze a file", prompt: "Help me analyze this file and highlight key insights with next steps." },
+  { label: "Executive summary", prompt: "Condense this long text into a concise executive summary." },
+  { label: "Rewrite for clarity", prompt: "Rewrite this content to be clearer, shorter, and more actionable." },
+  { label: "Tone adjustment", prompt: "Rewrite this message in a warm but professional tone." },
+  { label: "Grammar polish", prompt: "Proofread this draft and return a corrected, polished version." },
+  { label: "Learning plan", prompt: "Create a 4-week learning plan to improve my system design skills." },
+  { label: "Explain simply", prompt: "Explain this technical concept like I am new to software engineering." },
+  { label: "Interview prep", prompt: "Simulate a product manager interview and ask me challenging questions." },
+  { label: "Career strategy", prompt: "Suggest a 6-month career growth plan for a frontend engineer." },
+  { label: "Networking message", prompt: "Draft a short networking message to connect with a hiring manager." },
+  { label: "Negotiation script", prompt: "Give me a salary negotiation script for an offer discussion call." },
+  { label: "Habit tracker ideas", prompt: "Brainstorm simple habit tracking systems that are easy to maintain." },
+  { label: "Travel planner", prompt: "Plan a 3-day trip itinerary with balanced work and sightseeing." },
+  { label: "Meal planning", prompt: "Create a healthy weekly meal plan with a simple grocery list." },
+  { label: "Brainstorm ideas", prompt: "Give me 10 creative ideas for improving user onboarding conversion." },
+  { label: "Name generator", prompt: "Suggest 20 brandable names for an AI productivity assistant." },
+  { label: "Workshop agenda", prompt: "Create a 60-minute workshop agenda to align cross-functional teams." },
+]
+
+const EMPTY_STATE_PROMPT_COUNT = 4
+
+function pickRandomEmptyStateActions(
+  pool: EmptyStateAction[],
+  count: number
+): EmptyStateAction[] {
+  const shuffled = [...pool]
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+  return shuffled.slice(0, Math.min(count, shuffled.length))
+}
 
 function toTextMessage(id: string, role: UIMessage["role"], text: string): UIMessage {
   return { id, role, parts: [{ type: "text", text }] }
@@ -171,6 +242,9 @@ export function AIElementsChatShell({
   const [abortController, setAbortController] = useState<AbortController | null>(null)
   const [llmSuggestions, setLlmSuggestions] = useState<string[]>([])
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [emptyStateActions, setEmptyStateActions] = useState<EmptyStateAction[]>(() =>
+    pickRandomEmptyStateActions(EMPTY_STATE_PROMPT_POOL, EMPTY_STATE_PROMPT_COUNT)
+  )
   const messages = thread.messages
 
   const contextMetrics = useMemo(() => {
@@ -220,6 +294,9 @@ export function AIElementsChatShell({
     setLlmSuggestions([])
     setCopiedMessageId(null)
     setActiveBranch({})
+    setEmptyStateActions(
+      pickRandomEmptyStateActions(EMPTY_STATE_PROMPT_POOL, EMPTY_STATE_PROMPT_COUNT)
+    )
   }, [thread.threadId])
 
   const refineChatTitle = useCallback(async (firstUserMessage: string, threadId: string) => {
@@ -449,13 +526,42 @@ export function AIElementsChatShell({
       </div>
 
       <Conversation>
-        <ConversationContent className="mx-auto w-full max-w-[768px]">
+        <ConversationContent
+          className={cn(
+            "mx-auto w-full max-w-[768px]",
+            messages.length === 0 && "min-h-full"
+          )}
+        >
           {messages.length === 0 ? (
-            <ConversationEmptyState
-              title="No messages yet"
-              description="Use the prompt input to start."
-              icon={<CheckCircle2 className="size-5" />}
-            />
+            <ConversationEmptyState className="min-h-full">
+              <div className="mx-auto flex w-full max-w-[680px] flex-col items-center gap-5 text-center">
+                <div className="flex size-10 items-center justify-center rounded-full border border-border bg-muted/40 text-muted-foreground">
+                  <Sparkles className="size-5" />
+                </div>
+                <div className="space-y-2">
+                  <h2 className="text-3xl font-semibold tracking-tight text-foreground">
+                    Where should we start?
+                  </h2>
+                  <p className="text-sm text-muted-foreground sm:text-base">
+                    Pick a prompt to begin, or type your own request below.
+                  </p>
+                </div>
+
+                <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+                  {emptyStateActions.map((action) => (
+                    <Button
+                      key={action.label}
+                      variant="outline"
+                      className="h-auto justify-start gap-2 rounded-2xl px-4 py-3 text-left"
+                      onClick={() => handleSuggestionClick(action.prompt)}
+                    >
+                      <Lightbulb className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="text-sm text-foreground">{action.label}</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </ConversationEmptyState>
           ) : (
             messages.map((item) => {
               const msg = item.message

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
+  Bot,
   FileText,
   FolderKanban,
   Globe,
@@ -103,7 +104,7 @@ function SidebarBrand() {
           if (state === "collapsed") toggleSidebar()
         }}
       >
-        <MessageSquarePlus className="size-4 transition-opacity group-data-[collapsible=icon]:group-hover/brand:opacity-0" />
+        <Bot className="size-4 transition-opacity group-data-[collapsible=icon]:group-hover/brand:opacity-0" />
         <PanelLeftOpen className="absolute size-4 opacity-0 transition-opacity group-data-[collapsible=icon]:group-hover/brand:opacity-100" />
       </div>
       <div className="group-data-[collapsible=icon]:hidden">
@@ -435,7 +436,7 @@ export function App() {
   return (
     <ErrorBoundary>
       <TooltipProvider>
-        <SidebarProvider defaultOpen>
+        <SidebarProvider defaultOpen={false}>
       <Sidebar collapsible="icon" variant="inset">
         <div className="flex h-14 items-center justify-between px-2">
           <SidebarBrand />
