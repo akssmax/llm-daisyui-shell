@@ -15,6 +15,7 @@ import { useSidebar } from "@/components/ui/sidebar"
 import { DAISY_THEMES, useTheme } from "@/components/theme-provider"
 
 function formatThemeLabel(theme: string) {
+  if (theme === "system") return "System"
   return theme.charAt(0).toUpperCase() + theme.slice(1)
 }
 
@@ -40,7 +41,7 @@ export function ThemeSwitcher() {
   const { state } = useSidebar()
 
   const isCollapsed = state === "collapsed"
-  const selectedTheme = theme === "system" ? "light" : theme
+  const selectedTheme = theme
 
   const trigger = (
     <Button
@@ -74,8 +75,13 @@ export function ThemeSwitcher() {
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup
           value={selectedTheme}
-          onValueChange={(value) => setTheme(value as (typeof DAISY_THEMES)[number])}
+          onValueChange={(value) =>
+            setTheme(value as (typeof DAISY_THEMES)[number] | "system")
+          }
         >
+          <DropdownMenuRadioItem value="system">
+            <span>System</span>
+          </DropdownMenuRadioItem>
           {DAISY_THEMES.map((option) => (
             <DropdownMenuRadioItem key={option} value={option}>
               <ThemeSwatch theme={option} />
