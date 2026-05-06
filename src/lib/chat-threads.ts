@@ -19,6 +19,9 @@ export type ChatThread = {
   updatedAt: string
   messages: MockChatItem[]
   pendingQueue?: PendingQueueItem[]
+  threadMemory?: string
+  sessionSummary?: string
+  useMemory?: boolean
 }
 
 function nowIso(): string {
@@ -54,13 +57,19 @@ function isThreadShape(value: unknown): value is ChatThread {
   const pendingOk =
     item.pendingQueue === undefined ||
     (Array.isArray(item.pendingQueue) && item.pendingQueue.every(isPendingQueueItem))
+  const memoryOk = item.threadMemory === undefined || typeof item.threadMemory === "string"
+  const summaryOk = item.sessionSummary === undefined || typeof item.sessionSummary === "string"
+  const useMemoryOk = item.useMemory === undefined || typeof item.useMemory === "boolean"
   return (
     typeof item.threadId === "string" &&
     typeof item.title === "string" &&
     typeof item.createdAt === "string" &&
     typeof item.updatedAt === "string" &&
     Array.isArray(item.messages) &&
-    pendingOk
+    pendingOk &&
+    memoryOk &&
+    summaryOk &&
+    useMemoryOk
   )
 }
 
@@ -72,6 +81,9 @@ export function createChatThread(initial?: Partial<Pick<ChatThread, "title" | "m
     createdAt: timestamp,
     messages: initial?.messages ?? [],
     updatedAt: timestamp,
+    threadMemory: "",
+    sessionSummary: "",
+    useMemory: true,
   }
 }
 

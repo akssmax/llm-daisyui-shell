@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Bot,
+  Brain,
   FileText,
   Globe,
+  Database,
   MessageCircle,
   MessageSquarePlus,
   PanelLeftClose,
@@ -23,7 +25,10 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 import { ErrorBoundary } from "@/components/error-boundary"
 import {
   Sidebar,
@@ -59,13 +64,39 @@ import {
   type ChatThread,
   updateChatThread,
 } from "@/lib/chat-threads"
+import {
+  buildMemoryContext,
+  clearUserMemory,
+  loadUserMemory,
+  saveUserMemory,
+  type UserMemory,
+} from "@/lib/user-memory"
+import {
+  clearRagScope,
+  deleteRagSource,
+  getRagFileAcceptString,
+  ingestRagFile,
+  listRagSources,
+  validateRagFile,
+  type RagScope,
+  type RagSource,
+} from "@/lib/rag-memory"
 import { getThreadIdFromUrl, onThreadUrlChange, setThreadIdInUrl } from "@/lib/thread-url"
 
-type PageKey = "new-chat" | "sites" | "smart-tables" | "page-boosts" | "routines"
+type PageKey =
+  | "new-chat"
+  | "memory"
+  | "knowledge"
+  | "sites"
+  | "smart-tables"
+  | "page-boosts"
+  | "routines"
 type IconType = React.ComponentType<{ className?: string }>
 
 const workspaceItems: Array<{ label: string; key: PageKey; icon: IconType }> = [
   { label: "New Chat", key: "new-chat", icon: MessageSquarePlus },
+  { label: "Memory", key: "memory", icon: Brain },
+  { label: "Knowledge", key: "knowledge", icon: Database },
   { label: "Sites", key: "sites", icon: Globe },
   { label: "Smart Tables", key: "smart-tables", icon: Table2 },
   { label: "Page Boosts", key: "page-boosts", icon: Zap },
@@ -305,11 +336,336 @@ function RoutinesPage() {
 function ChatPage({
   thread,
   onUpdateThread,
+  globalMemory,
+  onSaveGlobalMemory,
 }: {
   thread: ChatThread
   onUpdateThread: (threadId: string, updater: (thread: ChatThread) => ChatThread) => void
+  globalMemory: UserMemory
+  onSaveGlobalMemory: (next: Partial<UserMemory>) => void
 }) {
-  return <AIElementsChatShell thread={thread} onUpdateThread={onUpdateThread} />
+  return (
+    <AIElementsChatShell
+      thread={thread}
+      onUpdateThread={onUpdateThread}
+      globalMemory={globalMemory}
+      onSaveGlobalMemory={onSaveGlobalMemory}
+    />
+  )
+}
+
+function MemoryPage({
+  activeThread,
+  onUpdateThread,
+  userMemory,
+  setUserMemory,
+}: {
+  activeThread: ChatThread | null
+  onUpdateThread: (threadId: string, updater: (thread: ChatThread) => ChatThread) => void
+  userMemory: UserMemory
+  setUserMemory: (memory: UserMemory) => void
+}) {
+  const [profile, setProfile] = useState(userMemory.profile)
+  const [preferences, setPreferences] = useState(userMemory.preferences)
+  const [facts, setFacts] = useState(userMemory.facts)
+  const [retrievalEnabled, setRetrievalEnabled] = useState(userMemory.retrievalEnabled)
+  const [retrievalMode, setRetrievalMode] = useState<UserMemory["retrievalMode"]>(userMemory.retrievalMode)
+  const [threadMemory, setThreadMemory] = useState(activeThread?.threadMemory ?? "")
+
+  useEffect(() => {
+    setProfile(userMemory.profile)
+    setPreferences(userMemory.preferences)
+    setFacts(userMemory.facts)
+    setRetrievalEnabled(userMemory.retrievalEnabled)
+    setRetrievalMode(userMemory.retrievalMode)
+  }, [userMemory])
+
+  useEffect(() => {
+    setThreadMemory(activeThread?.threadMemory ?? "")
+  }, [activeThread?.threadId, activeThread?.threadMemory])
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Global Memory</CardTitle>
+          <CardDescription>Used across all chat threads.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="memory-profile">Profile</Label>
+            <Textarea id="memory-profile" value={profile} onChange={(e) => setProfile(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="memory-preferences">Preferences</Label>
+            <Textarea
+              id="memory-preferences"
+              value={preferences}
+              onChange={(e) => setPreferences(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="memory-facts">Facts</Label>
+            <Textarea id="memory-facts" value={facts} onChange={(e) => setFacts(e.target.value)} />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => {
+                const next = saveUserMemory({
+                  profile,
+                  preferences,
+                  facts,
+                  retrievalEnabled,
+                  retrievalMode,
+                })
+                setUserMemory(next)
+              }}
+            >
+              Save memory
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const next = clearUserMemory()
+                setUserMemory(next)
+              }}
+            >
+              Clear global memory
+            </Button>
+          </div>
+          <div className="grid gap-3 rounded-lg border border-border p-3">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">Prompt-based retrieval</p>
+                <p className="text-xs text-muted-foreground">
+                  Enable or disable memory and knowledge retrieval gate.
+                </p>
+              </div>
+              <Switch checked={retrievalEnabled} onCheckedChange={setRetrievalEnabled} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="retrieval-mode">Retrieval mode</Label>
+              <select
+                id="retrieval-mode"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={retrievalMode}
+                onChange={(e) => setRetrievalMode(e.target.value as UserMemory["retrievalMode"])}
+                disabled={!retrievalEnabled}
+              >
+                <option value="conservative">Conservative</option>
+                <option value="balanced">Balanced</option>
+              </select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Thread Memory</CardTitle>
+          <CardDescription>Only applies to the currently selected thread.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {activeThread ? (
+            <>
+              <div className="flex items-center justify-between rounded-lg border border-border p-3">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium">Use memory in this chat</p>
+                  <p className="text-xs text-muted-foreground">Toggle personalization for this thread.</p>
+                </div>
+                <Switch
+                  checked={activeThread.useMemory !== false}
+                  onCheckedChange={(checked) => {
+                    onUpdateThread(activeThread.threadId, (current) => ({
+                      ...current,
+                      useMemory: checked,
+                    }))
+                  }}
+                />
+              </div>
+              <Textarea value={threadMemory} onChange={(e) => setThreadMemory(e.target.value)} />
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    onUpdateThread(activeThread.threadId, (current) => ({
+                      ...current,
+                      threadMemory,
+                    }))
+                  }}
+                >
+                  Save thread memory
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    onUpdateThread(activeThread.threadId, (current) => ({
+                      ...current,
+                      threadMemory: "",
+                    }))
+                  }}
+                >
+                  Clear thread memory
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                {buildMemoryContext(userMemory, threadMemory) || "No memory context configured yet."}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">Select a chat thread to manage thread memory.</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function KnowledgePage({
+  activeThread,
+  sources,
+  refreshSources,
+}: {
+  activeThread: ChatThread | null
+  sources: RagSource[]
+  refreshSources: () => void
+}) {
+  const [scope, setScope] = useState<RagScope>("global")
+  const [uploadError, setUploadError] = useState("")
+
+  const scopedSources = useMemo(() => {
+    return sources.filter((source) => {
+      if (source.scope === "global") return true
+      return source.threadId === activeThread?.threadId
+    })
+  }, [activeThread?.threadId, sources])
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Knowledge Sources</CardTitle>
+          <CardDescription>Upload .md, .txt, or .json files for retrieval memory.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="rag-scope">Scope</Label>
+            <select
+              id="rag-scope"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              value={scope}
+              onChange={(e) => setScope(e.target.value as RagScope)}
+            >
+              <option value="global">Global</option>
+              <option value="thread" disabled={!activeThread}>
+                Thread
+              </option>
+            </select>
+          </div>
+          <Input
+            type="file"
+            multiple
+            accept={getRagFileAcceptString()}
+            onChange={async (event) => {
+              const files = Array.from(event.target.files ?? [])
+              setUploadError("")
+              if (files.length > 50) {
+                setUploadError("You can upload up to 50 files at once.")
+                return
+              }
+              for (const file of files) {
+                const validation = validateRagFile(file, 5 * 1024 * 1024)
+                if (validation) {
+                  setUploadError(validation)
+                  return
+                }
+              }
+              for (const file of files) {
+                await ingestRagFile({
+                  file,
+                  scope,
+                  threadId: scope === "thread" ? activeThread?.threadId : undefined,
+                })
+              }
+              refreshSources()
+            }}
+          />
+          {uploadError ? <p className="text-xs text-destructive">{uploadError}</p> : null}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                clearRagScope("global")
+                refreshSources()
+              }}
+            >
+              Clear global KB
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!activeThread}
+              onClick={() => {
+                clearRagScope("thread", activeThread?.threadId)
+                refreshSources()
+              }}
+            >
+              Clear thread KB
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Indexed Sources</CardTitle>
+          <CardDescription>Current retrieval sources for this workspace/thread.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Scope</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Size</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {scopedSources.map((source) => (
+                <TableRow key={source.id}>
+                  <TableCell className="font-medium">{source.name}</TableCell>
+                  <TableCell>
+                    <Badge variant={source.scope === "global" ? "secondary" : "outline"}>{source.scope}</Badge>
+                  </TableCell>
+                  <TableCell>{source.type}</TableCell>
+                  <TableCell>{Math.max(1, Math.round(source.sizeBytes / 1024))} KB</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        deleteRagSource(source.id)
+                        refreshSources()
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {scopedSources.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
+                    No knowledge sources yet.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  )
 }
 
 function StandardPageShell({
@@ -351,6 +707,13 @@ export function App() {
   const [activePage, setActivePage] = useState<PageKey>("new-chat")
   const [threads, setThreads] = useState<ChatThread[]>([])
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+  const [userMemory, setUserMemory] = useState<UserMemory>(() => loadUserMemory())
+  const handleSaveGlobalMemory = useCallback((nextPartial: Partial<UserMemory>) => {
+    setUserMemory((current) => saveUserMemory({ ...current, ...nextPartial }))
+  }, [])
+
+  const [ragSources, setRagSources] = useState<RagSource[]>(() => listRagSources())
+  const threadsRef = useRef<ChatThread[]>([])
 
   const ensureActiveThreadFromUrl = useCallback(
     (currentThreads: ChatThread[]) => {
@@ -382,25 +745,48 @@ export function App() {
   }, [ensureActiveThreadFromUrl])
 
   useEffect(() => {
-    saveChatThreads(threads)
+    threadsRef.current = threads
   }, [threads])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      saveChatThreads(threads)
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [threads])
+
+  useEffect(() => {
+    const flushThreads = () => {
+      saveChatThreads(threadsRef.current)
+    }
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") flushThreads()
+    }
+    window.addEventListener("beforeunload", flushThreads)
+    document.addEventListener("visibilitychange", handleVisibility)
+    return () => {
+      window.removeEventListener("beforeunload", flushThreads)
+      document.removeEventListener("visibilitychange", handleVisibility)
+    }
+  }, [])
 
   useEffect(() => {
     return onThreadUrlChange(() => {
       const requestedThreadId = getThreadIdFromUrl()
+      const currentThreads = threadsRef.current
       if (!requestedThreadId) {
-        ensureActiveThreadFromUrl(threads)
+        ensureActiveThreadFromUrl(currentThreads)
         return
       }
-      const existing = threads.find((thread) => thread.threadId === requestedThreadId)
+      const existing = currentThreads.find((thread) => thread.threadId === requestedThreadId)
       if (!existing) {
-        ensureActiveThreadFromUrl(threads)
+        ensureActiveThreadFromUrl(currentThreads)
         return
       }
       setActivePage("new-chat")
       setActiveThreadId(existing.threadId)
     })
-  }, [ensureActiveThreadFromUrl, threads])
+  }, [ensureActiveThreadFromUrl])
 
   const activeThread = useMemo(
     () => threads.find((thread) => thread.threadId === activeThreadId) ?? null,
@@ -432,6 +818,9 @@ export function App() {
     () => workspaceItems.find((item) => item.key === activePage)?.label ?? "New Chat",
     [activePage]
   )
+  const refreshRagSources = useCallback(() => {
+    setRagSources(listRagSources())
+  }, [])
 
   return (
     <ErrorBoundary>
@@ -526,8 +915,40 @@ export function App() {
       <SidebarInset className="h-svh overflow-hidden">
         <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
           {activePage === "new-chat" && activeThread ? (
-            <ChatPage thread={activeThread} onUpdateThread={handleUpdateThread} />
+            <ChatPage
+              thread={activeThread}
+              onUpdateThread={handleUpdateThread}
+              globalMemory={userMemory}
+              onSaveGlobalMemory={handleSaveGlobalMemory}
+            />
           ) : null}
+          {activePage === "memory" && (
+            <StandardPageShell
+              title={currentLabel}
+              description="Persistent user and thread memory"
+              icon={Brain}
+            >
+              <MemoryPage
+                activeThread={activeThread}
+                onUpdateThread={handleUpdateThread}
+                userMemory={userMemory}
+                setUserMemory={setUserMemory}
+              />
+            </StandardPageShell>
+          )}
+          {activePage === "knowledge" && (
+            <StandardPageShell
+              title={currentLabel}
+              description="Manage retrieval knowledge sources"
+              icon={Database}
+            >
+              <KnowledgePage
+                activeThread={activeThread}
+                sources={ragSources}
+                refreshSources={refreshRagSources}
+              />
+            </StandardPageShell>
+          )}
           {activePage === "sites" && (
             <StandardPageShell
               title={currentLabel}

@@ -1,18 +1,24 @@
 import type { FileUIPart, UIMessage } from "ai"
 
 export type MockSource = { href: string; title: string }
+export type MemorySourceEntry = {
+  id: string
+  kind: "memory" | "rag"
+  title: string
+  description: string
+}
 
 export type MockToolCall = {
   name: string
   description: string
   state:
-    | "input-available"
     | "input-streaming"
-    | "input-complete"
+    | "input-available"
+    | "approval-requested"
+    | "approval-responded"
     | "output-available"
-    | "output-streaming"
-    | "output-complete"
-    | "error"
+    | "output-error"
+    | "output-denied"
   input?: Record<string, unknown>
   output?: unknown
   error?: string
@@ -26,6 +32,7 @@ export type MockAssistantMeta = {
   context?: { label: string; value: string }
   citations?: Array<{ label: string; href: string }>
   attachments?: Array<FileUIPart & { id: string }>
+  memorySources?: MemorySourceEntry[]
 }
 
 export type MockChatItem = {
@@ -119,7 +126,7 @@ export const mockChat: MockChatItem[] = [
         {
           name: "table_query",
           description: "Query Smart Tables for shortlisted candidates",
-          state: "output-complete",
+          state: "output-available",
           input: { table: "Frontend Engineer - Feb", filter: "shortlisted=true" },
           output: { shortlisted: 12, activelyLooking: 9, openToOffers: 3, interviewNotes: 2 },
         },

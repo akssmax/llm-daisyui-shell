@@ -19,5 +19,8 @@ export interface LlmChatRequest {
   attachments?: FileUIPart[]
   temperature?: number
   maxTokens?: number
+  memoryContext?: string
+  retrievedContext?: string
+  sessionSummary?: string
 }
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import type { FileUIPart, ToolUIPart, UIMessage } from "ai"
+import type { FileUIPart, UIMessage } from "ai"
 
 import {
   Context,
@@ -65,19 +65,18 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning"
 import {
+  ChainOfThought,
+  ChainOfThoughtContent,
+  ChainOfThoughtHeader,
+  ChainOfThoughtStep,
+} from "@/components/ai-elements/chain-of-thought"
+import {
   Source,
   Sources,
   SourcesContent,
   SourcesTrigger,
 } from "@/components/ai-elements/sources"
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion"
-import {
-  Tool,
-  ToolContent,
-  ToolHeader,
-  ToolInput,
-  ToolOutput,
-} from "@/components/ai-elements/tool"
 import {
   Queue,
   QueueItem,
@@ -100,14 +99,24 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer"
 import { streamChat } from "@/lib/llm-service"
 import type { ChatThread, PendingQueueItem } from "@/lib/chat-threads"
+import { buildMemoryContext, type UserMemory } from "@/lib/user-memory"
+import { buildRetrievedContext, searchRagMemory } from "@/lib/rag-memory"
+import { getRetrievalDecision } from "@/lib/retrieval-gating"
 import { nanoid } from "nanoid"
 import { MISTRAL_MODELS, type MistralModel } from "@/lib/llm-types"
-import type { MockChatItem } from "@/lib/mock-chat-data"
+import type { MemorySourceEntry, MockChatItem, MockToolCall } from "@/lib/mock-chat-data"
 
 import {
   Brain,
@@ -118,6 +127,7 @@ import {
   Mic,
   Plus,
   Sparkles,
+  BookOpen,
   ThumbsDown,
   ThumbsUp,
   Trash2,
@@ -208,6 +218,58 @@ function getMessageText(message: UIMessage): string {
     .join("")
 }
 
+function summarizeMessagesForSession(messages: MockChatItem[]): string {
+  const history = messages
+    .slice(-24)
+    .map((item) => {
+      const role = item.message.role.toUpperCase()
+      const text = getMessageText(item.message).trim()
+      if (!text) return null
+      return `${role}: ${text.slice(0, 280)}`
+    })
+    .filter((line): line is string => Boolean(line))
+  return history.join("\n")
+}
+
+function toChainStepStatus(state: MockToolCall["state"]): "complete" | "active" | "pending" {
+  if (state === "output-available") return "complete"
+  if (state === "output-error" || state === "output-denied") return "pending"
+  return "active"
+}
+
+function extractMemoryFromPrompt(text: string): { category: "profile" | "preferences" | "facts"; value: string } | null {
+  const prompt = text.trim()
+  if (!prompt) return null
+
+  const nameMatch =
+    prompt.match(/(?:remember\s+that\s+)?my\s+name\s+is\s+([a-z][a-z\s'-]{1,40})/i) ||
+    prompt.match(/remember\s+me\s+as\s+([a-z][a-z\s'-]{1,40})/i)
+  if (nameMatch?.[1]) {
+    return {
+      category: "profile",
+      value: `Name: ${nameMatch[1].trim()}`,
+    }
+  }
+
+  const prefMatch = prompt.match(/(?:i\s+prefer|remember\s+that\s+i\s+prefer)\s+(.{3,120})/i)
+  if (prefMatch?.[1]) {
+    return {
+      category: "preferences",
+      value: prefMatch[1].trim(),
+    }
+  }
+
+  const factMatch = prompt.match(/remember\s+that\s+(.{3,180})/i)
+  if (factMatch?.[1]) {
+    return {
+      category: "facts",
+      value: factMatch[1].trim(),
+    }
+  }
+
+  return null
+}
+
 function estimateTokenCount(text: string): number {
   if (!text.trim()) return 0
   return Math.ceil(text.length / 4)
@@ -248,10 +310,14 @@ export function AIElementsChatShell({
   className,
   thread,
   onUpdateThread,
+  globalMemory,
+  onSaveGlobalMemory,
 }: {
   className?: string
   thread: ChatThread
   onUpdateThread: (threadId: string, updater: (thread: ChatThread) => ChatThread) => void
+  globalMemory: UserMemory
+  onSaveGlobalMemory: (next: Partial<UserMemory>) => void
 }) {
   const [status, setStatus] = useState<ChatStatus>("ready")
   const [text, setText] = useState("")
@@ -263,6 +329,9 @@ export function AIElementsChatShell({
   const [emptyStateActions, setEmptyStateActions] = useState<EmptyStateAction[]>(() =>
     pickRandomEmptyStateActions(EMPTY_STATE_PROMPT_POOL, EMPTY_STATE_PROMPT_COUNT)
   )
+  const [sourcePanelOpen, setSourcePanelOpen] = useState(false)
+  const [sourcePanelItems, setSourcePanelItems] = useState<MemorySourceEntry[]>([])
+  const [sourcePanelTitle, setSourcePanelTitle] = useState("Sources")
   const processingQueueRef = useRef(false)
   const messages = thread.messages
   const messagesRef = useRef(messages)
@@ -414,6 +483,8 @@ export function AIElementsChatShell({
 
       const controller = new AbortController()
       setAbortController(controller)
+      let tokenBuffer = ""
+      let rafId: number | null = null
 
       const history = [
         ...messagesRef.current.map((item) => ({
@@ -422,38 +493,205 @@ export function AIElementsChatShell({
         })),
         { content: userText, role: "user" as const },
       ]
+      const pendingToolCalls: MockToolCall[] = []
+      const resolvedToolCalls: MockToolCall[] = []
+      const memorySourceEntries: MemorySourceEntry[] = []
+      const memoryEnabled = thread.useMemory !== false
+      const retrievalDecision = getRetrievalDecision(userText, {
+        retrievalEnabled: globalMemory.retrievalEnabled,
+        retrievalMode: globalMemory.retrievalMode,
+      })
+      const memoryContext = memoryEnabled
+        ? retrievalDecision.shouldUseMemory
+          ? buildMemoryContext(globalMemory, thread.threadMemory ?? "")
+          : ""
+        : ""
+      if (memoryEnabled && retrievalDecision.shouldUseMemory && memoryContext.trim().length > 0) {
+        pendingToolCalls.push({
+          name: "get_memory",
+          description: "Load user and thread memory",
+          state: "input-available",
+          input: { scope: "global+thread" },
+        })
+        resolvedToolCalls.push({
+          name: "get_memory",
+          description: "Load user and thread memory",
+          state: "output-available",
+          output: { loaded: true },
+        })
+        memorySourceEntries.push({
+          id: `memory-${assistantId}`,
+          kind: "memory",
+          title: "Saved memory context",
+          description: memoryContext.trim().slice(0, 240),
+        })
+      }
+      const ragResults = retrievalDecision.shouldUseRag
+        ? searchRagMemory({ query: userText, threadId: thread.threadId, limit: 4 })
+        : []
+      const retrievedContext = buildRetrievedContext(ragResults)
+      if (retrievalDecision.shouldUseRag && ragResults.length > 0) {
+        pendingToolCalls.push({
+          name: "search_memory",
+          description: "Search retrieval memory (global + thread)",
+          state: "input-available",
+          input: { query: userText },
+        })
+        resolvedToolCalls.push({
+          name: "search_memory",
+          description: "Search retrieval memory (global + thread)",
+          state: "output-available",
+          output: { matches: ragResults.length },
+        })
+        for (const [index, result] of ragResults.entries()) {
+          memorySourceEntries.push({
+            id: `rag-${assistantId}-${index}`,
+            kind: "rag",
+            title: result.sourceName,
+            description: result.text.slice(0, 240),
+          })
+        }
+      }
+
+      const extractedMemory = extractMemoryFromPrompt(userText)
+      if (extractedMemory) {
+        if (extractedMemory.category === "profile") {
+          onSaveGlobalMemory({
+            profile: [globalMemory.profile, extractedMemory.value].filter(Boolean).join("\n").trim(),
+          })
+        } else if (extractedMemory.category === "preferences") {
+          onSaveGlobalMemory({
+            preferences: [globalMemory.preferences, extractedMemory.value].filter(Boolean).join("\n").trim(),
+          })
+        } else {
+          onSaveGlobalMemory({
+            facts: [globalMemory.facts, extractedMemory.value].filter(Boolean).join("\n").trim(),
+          })
+        }
+        pendingToolCalls.push({
+          name: "save_memory",
+          description: "Persist long-term user memory",
+          state: "input-available",
+          input: { category: extractedMemory.category },
+        })
+        resolvedToolCalls.push({
+          name: "save_memory",
+          description: "Persist long-term user memory",
+          state: "output-available",
+          output: { category: extractedMemory.category, saved: true },
+        })
+        memorySourceEntries.push({
+          id: `saved-${assistantId}`,
+          kind: "memory",
+          title: "Saved memory",
+          description: extractedMemory.value,
+        })
+      }
+
+      let sessionSummary = thread.sessionSummary ?? ""
+      const estimatedTokens = estimateTokenCount(history.map((item) => item.content).join("\n"))
+      if (estimatedTokens > 4000) {
+        sessionSummary = summarizeMessagesForSession(messagesRef.current)
+        onUpdateThread(thread.threadId, (current) => ({
+          ...current,
+          sessionSummary,
+        }))
+        pendingToolCalls.push({
+          name: "summarize_conversation",
+          description: "Summarize older conversation context",
+          state: "input-available",
+          input: { trigger: "context_limit" },
+        })
+        resolvedToolCalls.push({
+          name: "summarize_conversation",
+          description: "Summarize older conversation context",
+          state: "output-available",
+          output: { summaryLength: sessionSummary.length },
+        })
+      }
+      const setAssistantTools = (tools: MockToolCall[]) => {
+        updateThreadMessages((prev) =>
+          prev.map((item) =>
+            item.id === assistantId
+              ? {
+                  ...item,
+                  meta: {
+                    ...(item.meta ?? {}),
+                    tools: tools.length > 0 ? tools : item.meta?.tools,
+                    memorySources: memorySourceEntries.length > 0 ? memorySourceEntries : item.meta?.memorySources,
+                  },
+                }
+              : item
+          )
+        )
+      }
+      const hasToolCalls = pendingToolCalls.length > 0 || resolvedToolCalls.length > 0
+      if (hasToolCalls || memorySourceEntries.length > 0) {
+        setAssistantTools(pendingToolCalls)
+      }
+      const finalizeToolCalls = (errorText?: string) => {
+        if (!hasToolCalls) return
+        if (errorText) {
+          setAssistantTools(
+            pendingToolCalls.map((tool) => ({
+              ...tool,
+              error: errorText,
+              state: "output-error",
+            }))
+          )
+          return
+        }
+        setAssistantTools(resolvedToolCalls)
+      }
+      const flushBufferedTokens = () => {
+        if (!tokenBuffer) return
+        const chunk = tokenBuffer
+        tokenBuffer = ""
+        updateThreadMessages((prev) => {
+          const lastIndex = prev.length - 1
+          const last = prev[lastIndex]
+          if (!last || last.id !== assistantId) {
+            return prev.map((it) =>
+              it.id === assistantId
+                ? {
+                    ...it,
+                    message: toTextMessage(
+                      it.message.id,
+                      "assistant",
+                      `${getMessageText(it.message)}${chunk}`
+                    ),
+                  }
+                : it
+            )
+          }
+          const previous = getMessageText(last.message)
+          const next = prev.slice()
+          next[lastIndex] = {
+            ...last,
+            message: toTextMessage(last.message.id, "assistant", `${previous}${chunk}`),
+          }
+          return next
+        })
+      }
+      const scheduleTokenFlush = () => {
+        if (rafId !== null) return
+        rafId = window.requestAnimationFrame(() => {
+          rafId = null
+          flushBufferedTokens()
+        })
+      }
 
       try {
         await streamChat({
           attachments: message.files,
           messages: history,
+          memoryContext,
+          retrievedContext,
+          sessionSummary,
           model: selectedModel,
           onToken: (chunk) => {
-            updateThreadMessages((prev) => {
-              const lastIndex = prev.length - 1
-              const last = prev[lastIndex]
-              if (!last || last.id !== assistantId) {
-                return prev.map((it) =>
-                  it.id === assistantId
-                    ? {
-                        ...it,
-                        message: toTextMessage(
-                          it.message.id,
-                          "assistant",
-                          `${getMessageText(it.message)}${chunk}`
-                        ),
-                      }
-                    : it
-                )
-              }
-              const previous = getMessageText(last.message)
-              const next = prev.slice()
-              next[lastIndex] = {
-                ...last,
-                message: toTextMessage(last.message.id, "assistant", `${previous}${chunk}`),
-              }
-              return next
-            })
+            tokenBuffer += chunk
+            scheduleTokenFlush()
           },
           onSuggestions: (suggestions) => {
             setLlmSuggestions(suggestions)
@@ -506,16 +744,34 @@ export function AIElementsChatShell({
           signal: controller.signal,
           temperature: 0.7,
         })
+        if (rafId !== null) {
+          window.cancelAnimationFrame(rafId)
+          rafId = null
+        }
+        flushBufferedTokens()
+        finalizeToolCalls()
         setStatus("ready")
       } catch (error) {
         const isAbort =
           (error instanceof DOMException && error.name === "AbortError") ||
           (error instanceof Error && error.name === "AbortError")
         if (isAbort) {
+          if (rafId !== null) {
+            window.cancelAnimationFrame(rafId)
+            rafId = null
+          }
+          flushBufferedTokens()
+          finalizeToolCalls("Cancelled")
           setStatus("ready")
           return
         }
         const errorMessage = error instanceof Error ? error.message : "Failed to get response."
+        if (rafId !== null) {
+          window.cancelAnimationFrame(rafId)
+          rafId = null
+        }
+        flushBufferedTokens()
+        finalizeToolCalls(errorMessage)
         updateThreadMessages((prev) =>
           prev.map((it) =>
             it.id === assistantId
@@ -535,7 +791,21 @@ export function AIElementsChatShell({
         setAbortController(null)
       }
     },
-    [onUpdateThread, refineChatTitle, selectedModel, thread.threadId, updateThreadMessages]
+    [
+      globalMemory.facts,
+      globalMemory.preferences,
+      globalMemory.profile,
+      globalMemory.retrievalEnabled,
+      globalMemory.retrievalMode,
+      onSaveGlobalMemory,
+      onUpdateThread,
+      refineChatTitle,
+      selectedModel,
+      thread.threadId,
+      thread.useMemory,
+      thread.threadMemory,
+      updateThreadMessages,
+    ]
   )
 
   const handleSubmit = useCallback(
@@ -731,6 +1001,28 @@ export function AIElementsChatShell({
                           </Reasoning>
                         ) : null}
 
+                        {meta?.tools?.length ? (
+                          <ChainOfThought defaultOpen={status === "streaming"}>
+                            <ChainOfThoughtHeader />
+                            <ChainOfThoughtContent>
+                              {meta.tools.map((tool, index) => (
+                                <ChainOfThoughtStep
+                                  key={`${tool.name}-step-${index}`}
+                                  label={tool.description || tool.name}
+                                  description={
+                                    tool.state === "output-available"
+                                      ? "Completed"
+                                      : tool.state === "output-error"
+                                        ? tool.error || "Error"
+                                        : "In progress"
+                                  }
+                                  status={toChainStepStatus(tool.state)}
+                                />
+                              ))}
+                            </ChainOfThoughtContent>
+                          </ChainOfThought>
+                        ) : null}
+
                         <MessageContent>
                           {msg.role === "assistant" ? (
                             <MarkdownRenderer markdown={getMessageText(msg)} />
@@ -754,25 +1046,6 @@ export function AIElementsChatShell({
                               </InlineCitationCard>
                             ))}
                           </InlineCitation>
-                        ) : null}
-
-                        {meta?.tools?.length ? (
-                          <div className="space-y-2">
-                            {meta.tools.map((t) => (
-                              <Tool key={t.name}>
-                                <ToolHeader
-                                  title={t.description}
-                                  type={"dynamic-tool"}
-                                  toolName={t.name}
-                                  state={t.state as ToolUIPart["state"]}
-                                />
-                                <ToolContent>
-                                  <ToolInput input={t.input ?? {}} />
-                                  <ToolOutput output={t.output} errorText={undefined} />
-                                </ToolContent>
-                              </Tool>
-                            ))}
-                          </div>
                         ) : null}
 
                         {showFeedbackBar ? (
@@ -816,6 +1089,21 @@ export function AIElementsChatShell({
                             >
                               <ThumbsDown className="size-4" />
                             </MessageAction>
+                            {msg.role === "assistant" && meta?.memorySources?.length ? (
+                              <MessageAction
+                                tooltip="Sources"
+                                variant="ghost"
+                                size="icon-sm"
+                                className="ml-1 rounded-lg text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                onClick={() => {
+                                  setSourcePanelItems(meta.memorySources ?? [])
+                                  setSourcePanelTitle("Sources")
+                                  setSourcePanelOpen(true)
+                                }}
+                              >
+                                <BookOpen className="size-4" />
+                              </MessageAction>
+                            ) : null}
                           </MessageActions>
                         ) : null}
                         {isLatestAssistantMessage && llmSuggestions.length > 0 ? (
@@ -985,6 +1273,27 @@ export function AIElementsChatShell({
 
         </div>
       </div>
+      <Sheet open={sourcePanelOpen} onOpenChange={setSourcePanelOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>{sourcePanelTitle}</SheetTitle>
+            <SheetDescription>
+              Memory and retrieval sources used for this response.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-3 px-4 pb-4">
+            {sourcePanelItems.map((entry) => (
+              <div key={entry.id} className="rounded-lg border border-border bg-card p-3">
+                <p className="text-sm font-medium text-foreground">{entry.title}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{entry.description}</p>
+              </div>
+            ))}
+            {sourcePanelItems.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No sources available for this response.</p>
+            ) : null}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
