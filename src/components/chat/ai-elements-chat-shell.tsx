@@ -91,8 +91,6 @@ import type { MockChatItem } from "@/lib/mock-chat-data"
 import {
   CheckCircle2,
   Copy,
-  FileText,
-  Globe,
   Search,
   Sparkles,
   ThumbsDown,
