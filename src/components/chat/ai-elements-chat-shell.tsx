@@ -60,22 +60,13 @@ import {
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
 import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from "@/components/ai-elements/reasoning"
-import {
   ChainOfThought,
   ChainOfThoughtContent,
   ChainOfThoughtHeader,
+  ChainOfThoughtSearchResult,
+  ChainOfThoughtSearchResults,
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought"
-import {
-  Source,
-  Sources,
-  SourcesContent,
-  SourcesTrigger,
-} from "@/components/ai-elements/sources"
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion"
 import {
   Queue,
@@ -237,6 +228,70 @@ function toChainStepStatus(state: MockToolCall["state"]): "complete" | "active" 
   return "active"
 }
 
+type UnifiedTraceStep = {
+  id: string
+  label: string
+  description?: string
+  status: "complete" | "active" | "pending"
+  sources?: string[]
+}
+
+function buildUnifiedTraceSteps(params: {
+  itemId: string
+  reasoning?: string
+  tools?: MockToolCall[]
+  sources?: string[]
+  isStreaming: boolean
+  hasAssistantText: boolean
+}): UnifiedTraceStep[] {
+  const { itemId, reasoning, tools, sources, isStreaming, hasAssistantText } = params
+  const steps: UnifiedTraceStep[] = []
+
+  if (reasoning?.trim()) {
+    steps.push({
+      id: `${itemId}-reasoning`,
+      label: "Understanding request",
+      description: reasoning.trim().slice(0, 220),
+      status: "complete",
+    })
+  }
+
+  if (tools?.length) {
+    for (const [index, tool] of tools.entries()) {
+      steps.push({
+        id: `${itemId}-tool-${index}`,
+        label: tool.description || tool.name,
+        description:
+          tool.state === "output-available"
+            ? "Completed"
+            : tool.state === "output-error"
+              ? tool.error || "Error"
+              : "In progress",
+        status: toChainStepStatus(tool.state),
+      })
+    }
+  }
+
+  if (sources && sources.length > 0) {
+    steps.push({
+      id: `${itemId}-sources`,
+      label: "Gathering sources",
+      description: `Retrieved ${sources.length} source${sources.length === 1 ? "" : "s"}`,
+      status: isStreaming ? "active" : "complete",
+      sources,
+    })
+  }
+
+  steps.push({
+    id: `${itemId}-generation`,
+    label: "Generating response",
+    description: isStreaming ? "In progress" : "Completed",
+    status: isStreaming ? "active" : hasAssistantText ? "complete" : "pending",
+  })
+
+  return steps
+}
+
 function extractMemoryFromPrompt(text: string): { category: "profile" | "preferences" | "facts"; value: string } | null {
   const prompt = text.trim()
   if (!prompt) return null
@@ -326,6 +381,7 @@ export function AIElementsChatShell({
   const [abortController, setAbortController] = useState<AbortController | null>(null)
   const [llmSuggestions, setLlmSuggestions] = useState<string[]>([])
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [chainOfThoughtOpen, setChainOfThoughtOpen] = useState<Record<string, boolean>>({})
   const [emptyStateActions, setEmptyStateActions] = useState<EmptyStateAction[]>(() =>
     pickRandomEmptyStateActions(EMPTY_STATE_PROMPT_POOL, EMPTY_STATE_PROMPT_COUNT)
   )
@@ -387,6 +443,7 @@ export function AIElementsChatShell({
     setText("")
     setLlmSuggestions([])
     setCopiedMessageId(null)
+    setChainOfThoughtOpen({})
     setActiveBranch({})
     setEmptyStateActions(
       pickRandomEmptyStateActions(EMPTY_STATE_PROMPT_POOL, EMPTY_STATE_PROMPT_COUNT)
@@ -627,6 +684,7 @@ export function AIElementsChatShell({
       }
       const hasToolCalls = pendingToolCalls.length > 0 || resolvedToolCalls.length > 0
       if (hasToolCalls || memorySourceEntries.length > 0) {
+        setChainOfThoughtOpen((prev) => ({ ...prev, [assistantId]: true }))
         setAssistantTools(pendingToolCalls)
       }
       const finalizeToolCalls = (errorText?: string) => {
@@ -639,9 +697,15 @@ export function AIElementsChatShell({
               state: "output-error",
             }))
           )
+          window.setTimeout(() => {
+            setChainOfThoughtOpen((prev) => ({ ...prev, [assistantId]: false }))
+          }, 900)
           return
         }
         setAssistantTools(resolvedToolCalls)
+        window.setTimeout(() => {
+          setChainOfThoughtOpen((prev) => ({ ...prev, [assistantId]: false }))
+        }, 900)
       }
       const flushBufferedTokens = () => {
         if (!tokenBuffer) return
@@ -834,6 +898,9 @@ export function AIElementsChatShell({
           },
         ],
       }))
+      // Keep input usable while streaming by clearing local controlled text
+      // when a prompt is queued instead of immediately executed.
+      setText("")
     },
     [onUpdateThread, runMessage, status, thread.pendingQueue, thread.threadId]
   )
@@ -902,7 +969,7 @@ export function AIElementsChatShell({
               <ContextContentHeader />
               <ContextContentBody>
                 <div className="text-sm text-foreground">
-                  {assistant?.meta?.context?.value ?? "Recruiter Agent"}
+                  {assistant?.meta?.context?.value ?? "No active context"}
                 </div>
               </ContextContentBody>
             </ContextContent>
@@ -980,48 +1047,61 @@ export function AIElementsChatShell({
                           </Attachments>
                         ) : null}
 
-                        {meta?.sources?.length ? (
-                          <Sources>
-                            <SourcesTrigger count={meta.sources.length} />
-                            <SourcesContent>
-                              {meta.sources.map((s) => (
-                                <Source key={s.href} href={s.href} title={s.title} />
-                              ))}
-                            </SourcesContent>
-                          </Sources>
-                        ) : null}
+                        {msg.role === "assistant" && (() => {
+                          const sourceTitles = [
+                            ...(meta?.sources?.map((source) => source.title) ?? []),
+                            ...(meta?.memorySources?.map((source) => source.title) ?? []),
+                          ]
+                          const uniqueSourceTitles = Array.from(new Set(sourceTitles))
+                          const traceSteps = buildUnifiedTraceSteps({
+                            hasAssistantText: Boolean(getMessageText(msg).trim()),
+                            isStreaming: isLatestAssistantMessage && status === "streaming",
+                            itemId: item.id,
+                            reasoning: meta?.reasoning?.content,
+                            sources: uniqueSourceTitles,
+                            tools: meta?.tools,
+                          })
 
-                        {meta?.reasoning ? (
-                          <Reasoning
-                            duration={meta.reasoning.durationSeconds}
-                            isStreaming={status === "streaming"}
-                          >
-                            <ReasoningTrigger />
-                            <ReasoningContent>{meta.reasoning.content}</ReasoningContent>
-                          </Reasoning>
-                        ) : null}
-
-                        {meta?.tools?.length ? (
-                          <ChainOfThought defaultOpen={status === "streaming"}>
-                            <ChainOfThoughtHeader />
-                            <ChainOfThoughtContent>
-                              {meta.tools.map((tool, index) => (
-                                <ChainOfThoughtStep
-                                  key={`${tool.name}-step-${index}`}
-                                  label={tool.description || tool.name}
-                                  description={
-                                    tool.state === "output-available"
-                                      ? "Completed"
-                                      : tool.state === "output-error"
-                                        ? tool.error || "Error"
-                                        : "In progress"
-                                  }
-                                  status={toChainStepStatus(tool.state)}
-                                />
-                              ))}
-                            </ChainOfThoughtContent>
-                          </ChainOfThought>
-                        ) : null}
+                          if (traceSteps.length === 0) return null
+                          return (
+                            <ChainOfThought
+                              defaultOpen={isLatestAssistantMessage && status === "streaming"}
+                              open={
+                                chainOfThoughtOpen[item.id] ??
+                                (isLatestAssistantMessage && status === "streaming")
+                              }
+                              onOpenChange={(open) =>
+                                setChainOfThoughtOpen((prev) => ({ ...prev, [item.id]: open }))
+                              }
+                            >
+                              <ChainOfThoughtHeader>
+                                {uniqueSourceTitles.length > 0
+                                  ? `Generated using ${uniqueSourceTitles.length} source${uniqueSourceTitles.length === 1 ? "" : "s"}`
+                                  : "Chain of Thought"}
+                              </ChainOfThoughtHeader>
+                              <ChainOfThoughtContent>
+                                {traceSteps.map((step) => (
+                                  <ChainOfThoughtStep
+                                    key={step.id}
+                                    label={step.label}
+                                    description={step.description}
+                                    status={step.status}
+                                  >
+                                    {step.sources?.length ? (
+                                      <ChainOfThoughtSearchResults>
+                                        {step.sources.map((source) => (
+                                          <ChainOfThoughtSearchResult key={`${step.id}-${source}`}>
+                                            {source}
+                                          </ChainOfThoughtSearchResult>
+                                        ))}
+                                      </ChainOfThoughtSearchResults>
+                                    ) : null}
+                                  </ChainOfThoughtStep>
+                                ))}
+                              </ChainOfThoughtContent>
+                            </ChainOfThought>
+                          )
+                        })()}
 
                         <MessageContent>
                           {msg.role === "assistant" ? (

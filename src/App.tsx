@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Bot,
   Brain,
+  MoreHorizontal,
   FileText,
   Globe,
   Database,
@@ -9,7 +10,9 @@ import {
   MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Table2,
+  Trash2,
   Workflow,
   Zap,
 } from "lucide-react"
@@ -27,9 +30,32 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { ErrorBoundary } from "@/components/error-boundary"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Sidebar,
   SidebarContent,
@@ -445,16 +471,19 @@ function MemoryPage({
             </div>
             <div className="space-y-2">
               <Label htmlFor="retrieval-mode">Retrieval mode</Label>
-              <select
-                id="retrieval-mode"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <Select
                 value={retrievalMode}
-                onChange={(e) => setRetrievalMode(e.target.value as UserMemory["retrievalMode"])}
+                onValueChange={(value) => setRetrievalMode(value as UserMemory["retrievalMode"])}
                 disabled={!retrievalEnabled}
               >
-                <option value="conservative">Conservative</option>
-                <option value="balanced">Balanced</option>
-              </select>
+                <SelectTrigger id="retrieval-mode" className="h-9 w-full">
+                  <SelectValue placeholder="Select retrieval mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="conservative">Conservative</SelectItem>
+                  <SelectItem value="balanced">Balanced</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
@@ -713,6 +742,9 @@ export function App() {
   }, [])
 
   const [ragSources, setRagSources] = useState<RagSource[]>(() => listRagSources())
+  const [threadToDelete, setThreadToDelete] = useState<ChatThread | null>(null)
+  const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState("")
   const threadsRef = useRef<ChatThread[]>([])
 
   const ensureActiveThreadFromUrl = useCallback(
@@ -814,6 +846,53 @@ export function App() {
     []
   )
 
+  const startRenameThread = useCallback((threadId: string) => {
+    const current = threads.find((thread) => thread.threadId === threadId)
+    if (!current) return
+    setRenamingThreadId(threadId)
+    setRenameDraft(current.title)
+  }, [threads])
+
+  const commitRenameThread = useCallback((threadId: string) => {
+    const nextTitle = renameDraft.trim()
+    if (!nextTitle) return
+    setThreads((prev) =>
+      updateChatThread(prev, threadId, (thread) => ({
+        ...thread,
+        title: nextTitle.slice(0, 64),
+      }))
+    )
+    setRenamingThreadId(null)
+    setRenameDraft("")
+  }, [renameDraft])
+
+  const cancelRenameThread = useCallback(() => {
+    setRenamingThreadId(null)
+    setRenameDraft("")
+  }, [])
+
+  const deleteThread = useCallback((threadId: string) => {
+    setThreads((prev) => {
+      const remaining = prev.filter((thread) => thread.threadId !== threadId)
+      if (remaining.length === 0) {
+        const fallback = createChatThread()
+        setActiveThreadId(fallback.threadId)
+        setThreadIdInUrl(fallback.threadId, { replace: true })
+        setActivePage("new-chat")
+        return [fallback]
+      }
+      if (activeThreadId === threadId) {
+        const fallback = remaining[0]
+        if (fallback) {
+          setActiveThreadId(fallback.threadId)
+          setThreadIdInUrl(fallback.threadId, { replace: true })
+          setActivePage("new-chat")
+        }
+      }
+      return remaining
+    })
+  }, [activeThreadId])
+
   const currentLabel = useMemo(
     () => workspaceItems.find((item) => item.key === activePage)?.label ?? "New Chat",
     [activePage]
@@ -867,15 +946,65 @@ export function App() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {threads.map((thread) => (
-                  <SidebarMenuItem key={thread.threadId}>
+                  <SidebarMenuItem key={thread.threadId} className="group/menu-item relative">
                     <SidebarMenuButton
                       isActive={activePage === "new-chat" && activeThreadId === thread.threadId}
                       tooltip={thread.title}
-                      onClick={() => selectThread(thread.threadId)}
+                      onClick={() => {
+                        if (renamingThreadId === thread.threadId) return
+                        selectThread(thread.threadId)
+                      }}
+                      className="pr-9"
                     >
                       <MessageCircle />
-                      <span>{thread.title}</span>
+                      {renamingThreadId === thread.threadId ? (
+                        <Input
+                          autoFocus
+                          className="h-6 px-2 text-xs"
+                          value={renameDraft}
+                          onChange={(event) => setRenameDraft(event.target.value)}
+                          onBlur={() => commitRenameThread(thread.threadId)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault()
+                              commitRenameThread(thread.threadId)
+                            } else if (event.key === "Escape") {
+                              event.preventDefault()
+                              cancelRenameThread()
+                            }
+                          }}
+                          onClick={(event) => event.stopPropagation()}
+                        />
+                      ) : (
+                        <span>{thread.title}</span>
+                      )}
                     </SidebarMenuButton>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="absolute top-1/2 right-1 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/menu-item:opacity-100 data-[state=open]:opacity-100"
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label="Chat actions"
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem onSelect={() => startRenameThread(thread.threadId)}>
+                          <Pencil className="size-4" />
+                          Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onSelect={() => setThreadToDelete(thread)}
+                        >
+                          <Trash2 className="size-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </SidebarMenuItem>
                 ))}
               </SidebarMenu>
@@ -987,6 +1116,35 @@ export function App() {
           )}
         </main>
       </SidebarInset>
+      <AlertDialog
+        open={Boolean(threadToDelete)}
+        onOpenChange={(open) => {
+          if (!open) setThreadToDelete(null)
+        }}
+      >
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete chat?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the selected chat from your local history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setThreadToDelete(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (threadToDelete) deleteThread(threadToDelete.threadId)
+                setThreadToDelete(null)
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
         </SidebarProvider>
       </TooltipProvider>
     </ErrorBoundary>

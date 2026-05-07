@@ -215,19 +215,28 @@
   }
 
   .chat-markdown :where(ul) {
-    @apply my-3 list-inside list-disc pl-2;
+    @apply my-3 list-outside list-disc pl-5;
   }
 
   .chat-markdown :where(ol) {
-    @apply my-3 list-inside list-decimal pl-2;
+    @apply my-3 list-outside list-decimal pl-5;
   }
 
   .chat-markdown :where(li) {
-    @apply my-1.5;
+    @apply my-1 leading-[1.6];
+  }
+
+  .chat-markdown :where(li > p) {
+    @apply my-1;
   }
 
   .chat-markdown :where(pre) {
     @apply my-4 overflow-x-auto rounded-xl border border-base-content/10 bg-base-300 p-4;
+  }
+
+  /* Avoid applying generic markdown <pre> styling to AI Elements CodeBlock internals. */
+  .chat-markdown :where([data-language] pre) {
+    @apply my-0 overflow-visible rounded-none border-0 bg-transparent p-4;
   }
 
   .chat-markdown :where(pre code) {
