@@ -1,8 +1,20 @@
-import type { LlmChatRequest } from "@/lib/llm-types"
+import type { ChatCompletionStatus, LlmChatRequest } from "@/lib/llm-types"
 import type { MockAssistantMeta, MockSource } from "@/lib/mock-chat-data"
 
 type Citation = NonNullable<MockAssistantMeta["citations"]>[number]
 type ReasoningMeta = NonNullable<MockAssistantMeta["reasoning"]>
+type StreamDonePayload = {
+  status?: ChatCompletionStatus
+  finishReason?: string
+  maxTokens?: number
+}
+
+export type StreamChatResult = {
+  completionStatus: ChatCompletionStatus
+  emittedTokens: number
+  finishReason?: string
+  maxTokens?: number
+}
 
 export interface StreamChatOptions extends LlmChatRequest {
   onToken: (token: string) => void
@@ -10,6 +22,7 @@ export interface StreamChatOptions extends LlmChatRequest {
   onReasoning?: (reasoning: ReasoningMeta) => void
   onSources?: (sources: MockSource[]) => void
   onCitations?: (citations: Citation[]) => void
+  onComplete?: (result: StreamChatResult) => void
   signal?: AbortSignal
 }
 
@@ -56,7 +69,7 @@ async function streamSseResponse(
   onReasoning?: (reasoning: ReasoningMeta) => void,
   onSources?: (sources: MockSource[]) => void,
   onCitations?: (citations: Citation[]) => void
-): Promise<void> {
+): Promise<StreamDonePayload | null> {
   if (!response.body) {
     throw new Error("Missing response body from /api/chat")
   }
@@ -64,6 +77,7 @@ async function streamSseResponse(
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
+  let donePayload: StreamDonePayload | null = null
   const processEvent = (rawEvent: string) => {
     const parsed = parseSseEvent(rawEvent)
     if (!parsed) return
@@ -142,6 +156,13 @@ async function streamSseResponse(
         if (error instanceof Error) throw error
         throw new Error("Streaming failed")
       }
+    } else if (parsed.event === "done") {
+      try {
+        const payload = JSON.parse(parsed.data) as StreamDonePayload
+        donePayload = payload
+      } catch {
+        // Ignore malformed done payloads.
+      }
     }
   }
 
@@ -167,6 +188,8 @@ async function streamSseResponse(
       separatorIndex = buffer.indexOf("\n\n")
     }
   }
+
+  return donePayload
 }
 
 async function requestChat(
@@ -177,7 +200,7 @@ async function requestChat(
   onReasoning?: (reasoning: ReasoningMeta) => void,
   onSources?: (sources: MockSource[]) => void,
   onCitations?: (citations: Citation[]) => void
-): Promise<{ emittedTokens: number }> {
+): Promise<StreamChatResult> {
   const response = await fetch("/api/chat", {
     body: JSON.stringify(payload),
     headers: {
@@ -200,7 +223,7 @@ async function requestChat(
   }
 
   let tokenCount = 0
-  await streamSseResponse(
+  const donePayload = await streamSseResponse(
     response,
     (token) => {
       tokenCount += 1
@@ -212,14 +235,30 @@ async function requestChat(
     onCitations
   )
 
-  return { emittedTokens: tokenCount }
+  return {
+    completionStatus: donePayload?.status ?? "completed",
+    emittedTokens: tokenCount,
+    finishReason: donePayload?.finishReason,
+    maxTokens: donePayload?.maxTokens,
+  }
 }
 
-export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { onToken, onSuggestions, onReasoning, onSources, onCitations, signal, ...payload } = options
+export async function streamChat(options: StreamChatOptions): Promise<StreamChatResult> {
+  const {
+    onToken,
+    onSuggestions,
+    onReasoning,
+    onSources,
+    onCitations,
+    onComplete,
+    signal,
+    ...payload
+  } = options
 
   try {
-    await requestChat(payload, signal, onToken, onSuggestions, onReasoning, onSources, onCitations)
+    const result = await requestChat(payload, signal, onToken, onSuggestions, onReasoning, onSources, onCitations)
+    onComplete?.(result)
+    return result
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     const isNetworkError = error instanceof TypeError
@@ -230,7 +269,9 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     if (!shouldRetry) throw error
 
     await sleep(RETRY_DELAY_MS)
-    await requestChat(payload, signal, onToken, onSuggestions, onReasoning, onSources, onCitations)
+    const result = await requestChat(payload, signal, onToken, onSuggestions, onReasoning, onSources, onCitations)
+    onComplete?.(result)
+    return result
   }
 }
 

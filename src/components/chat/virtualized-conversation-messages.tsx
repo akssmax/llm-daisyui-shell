@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react"
 
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useStickToBottomContext } from "use-stick-to-bottom"
@@ -7,6 +7,7 @@ import { AssistantMessageRowLive } from "@/components/chat/assistant-message-row
 import type { ChatStatus } from "@/components/chat/assistant-message-row-live"
 import { ChatMessageRow } from "@/components/chat/chat-message-row"
 import type { AgentAvatarShape } from "@/components/chat/agent-shape-avatar"
+import { getMessageText } from "@/lib/chat-message-utils"
 import type { MemorySourceEntry, MockChatItem } from "@/lib/mock-chat-data"
 
 type VirtualizedConversationMessagesProps = {
@@ -43,6 +44,8 @@ export function VirtualizedConversationMessages({
   onOpenMemorySources,
 }: VirtualizedConversationMessagesProps) {
   const { scrollRef } = useStickToBottomContext()
+  const latestAssistantRowElRef = useRef<HTMLDivElement | null>(null)
+
   const rowVirtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => scrollRef.current,
@@ -54,9 +57,37 @@ export function VirtualizedConversationMessages({
 
   const virtualItems = rowVirtualizer.getVirtualItems()
 
-  useEffect(() => {
-    rowVirtualizer.measure()
-  }, [messages.length, rowVirtualizer])
+  const streamingAssistantFingerprint = useMemo(() => {
+    if (status !== "streaming" || !latestAssistantMessageId) return 0
+    const row = messages.find((m) => m.id === latestAssistantMessageId)
+    if (!row || row.message.role !== "assistant") return 0
+    return getMessageText(row.message).length
+  }, [latestAssistantMessageId, messages, status])
+
+  useLayoutEffect(() => {
+    const el = latestAssistantRowElRef.current
+    if (!el || streamingAssistantFingerprint === 0) return
+    rowVirtualizer.measureElement(el)
+  }, [rowVirtualizer, streamingAssistantFingerprint])
+
+  const attachRowRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      rowVirtualizer.measureElement(node)
+      if (!node) return
+      const idx = Number.parseInt(node.getAttribute("data-index") ?? "-1", 10)
+      const row = messages[idx]
+      const isLatestAssistant =
+        row &&
+        row.message.role === "assistant" &&
+        row.id === latestAssistantMessageId
+      if (isLatestAssistant) {
+        latestAssistantRowElRef.current = node
+      } else if (latestAssistantRowElRef.current === node) {
+        latestAssistantRowElRef.current = null
+      }
+    },
+    [latestAssistantMessageId, messages, rowVirtualizer]
+  )
 
   return (
     <div
@@ -76,7 +107,7 @@ export function VirtualizedConversationMessages({
         return (
           <div
             key={item.id}
-            ref={rowVirtualizer.measureElement}
+            ref={attachRowRef}
             data-index={virtualItem.index}
             className="absolute left-0 top-0 w-full"
             style={{ transform: `translateY(${virtualItem.start}px)` }}

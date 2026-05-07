@@ -79,7 +79,7 @@ import { buildMemoryContext, type UserMemory } from "@/lib/user-memory"
 import { buildRetrievedContext, searchRagMemory } from "@/lib/rag-memory"
 import { getRetrievalDecision } from "@/lib/retrieval-gating"
 import { nanoid } from "nanoid"
-import { MISTRAL_MODELS, type MistralModel } from "@/lib/llm-types"
+import { MISTRAL_MODELS, type ChatCompletionStatus, type MistralModel } from "@/lib/llm-types"
 import type { MemorySourceEntry, MockChatItem, MockToolCall } from "@/lib/mock-chat-data"
 import {
   estimateTokenCount,
@@ -91,6 +91,11 @@ import {
 import { Brain, Lightbulb, ListOrdered, Mic, Plus, Sparkles, Trash2 } from "lucide-react"
 
 type ChatStatus = "ready" | "submitted" | "streaming" | "error"
+type CompletionNotice = {
+  actionPrompt?: string
+  message: string
+  status: ChatCompletionStatus
+}
 
 const EMPTY_PENDING_QUEUE: PendingQueueItem[] = []
 
@@ -151,6 +156,7 @@ const EMPTY_STATE_PROMPT_POOL: EmptyStateAction[] = [
 ]
 
 const EMPTY_STATE_PROMPT_COUNT = 4
+const CONTINUE_RESPONSE_PROMPT = "Continue from where you left off and complete the previous answer."
 
 function pickRandomEmptyStateActions(
   pool: EmptyStateAction[],
@@ -268,6 +274,7 @@ export function AIElementsChatShell({
   const [sourcePanelOpen, setSourcePanelOpen] = useState(false)
   const [sourcePanelItems, setSourcePanelItems] = useState<MemorySourceEntry[]>([])
   const [sourcePanelTitle, setSourcePanelTitle] = useState("Sources")
+  const [completionNotice, setCompletionNotice] = useState<CompletionNotice | null>(null)
   const processingQueueRef = useRef(false)
   const thoughtStartMsRef = useRef<Record<string, number>>({})
   const liveAgentShape = useMemo(() => {
@@ -340,6 +347,7 @@ export function AIElementsChatShell({
     setCopiedMessageId(null)
     setChainOfThoughtOpen({})
     setActiveBranch({})
+    setCompletionNotice(null)
     setEmptyStateActions(
       pickRandomEmptyStateActions(EMPTY_STATE_PROMPT_POOL, EMPTY_STATE_PROMPT_COUNT)
     )
@@ -423,6 +431,7 @@ export function AIElementsChatShell({
 
       setText("")
       setLlmSuggestions([])
+      setCompletionNotice(null)
       setStatus("streaming")
 
       const assistantId = `a-${Date.now()}`
@@ -655,7 +664,7 @@ export function AIElementsChatShell({
       }
 
       try {
-        await streamChat({
+        const streamResult = await streamChat({
           attachments: message.files,
           messages: history,
           memoryContext,
@@ -693,6 +702,16 @@ export function AIElementsChatShell({
               }))
             )
           },
+          onComplete: (result) => {
+            if (result.completionStatus === "max_tokens_reached") {
+              setCompletionNotice({
+                actionPrompt: CONTINUE_RESPONSE_PROMPT,
+                message:
+                  "Response reached the output token limit and was truncated. Continue to get the rest.",
+                status: "max_tokens_reached",
+              })
+            }
+          },
           signal: controller.signal,
           temperature: 0.7,
         })
@@ -701,6 +720,12 @@ export function AIElementsChatShell({
           rafId = null
         }
         flushBufferedTokens()
+        if (streamResult.completionStatus === "max_tokens_reached") {
+          setLlmSuggestions((prev) => {
+            if (prev.includes(CONTINUE_RESPONSE_PROMPT)) return prev
+            return [CONTINUE_RESPONSE_PROMPT, ...prev]
+          })
+        }
         finalizeToolCalls()
         finalizeThoughtDuration()
         scheduleChainClose()
@@ -728,6 +753,12 @@ export function AIElementsChatShell({
         }
         flushBufferedTokens()
         finalizeToolCalls(errorMessage)
+        setCompletionNotice({
+          message: errorMessage.includes("timed out")
+            ? "The model request timed out before completion."
+            : "Streaming failed before completion. Try continuing the response.",
+          status: errorMessage.includes("timed out") ? "timeout" : "upstream_error",
+        })
         finalizeThoughtDuration()
         scheduleChainClose()
         updateThreadMessages((prev) =>
@@ -1015,6 +1046,25 @@ export function AIElementsChatShell({
                 ) : null}
               </div>
             </Queue>
+          ) : null}
+
+          {completionNotice ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2">
+              <p className="text-xs text-amber-900 dark:text-amber-200">
+                {completionNotice.message}
+              </p>
+              {completionNotice.actionPrompt ? (
+                <Button
+                  className="h-7 rounded-lg px-2.5 text-xs"
+                  onClick={() => handleSuggestionClick(completionNotice.actionPrompt ?? "")}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  Continue response
+                </Button>
+              ) : null}
+            </div>
           ) : null}
 
           <PromptInputProvider>

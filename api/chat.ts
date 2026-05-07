@@ -37,6 +37,8 @@ type ChatRequestBody = {
   sessionSummary?: string
 }
 
+type CompletionStatus = "completed" | "max_tokens_reached"
+
 const MISTRAL_MODELS = new Set([
   "mistral-small-latest",
   "mistral-medium-latest",
@@ -473,6 +475,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const decoder = new TextDecoder()
     let upstreamBuffer = ""
     let assistantText = ""
+    let finishReason: string | null = null
     const processRawEvent = (rawEvent: string) => {
       const lines = rawEvent.replace(/\r\n/g, "\n").split("\n")
       for (const line of lines) {
@@ -485,6 +488,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           const choice = payload?.choices?.[0]
           const tokenFromDelta = choice?.delta?.content
           const tokenFromMessage = choice?.message?.content
+          if (typeof choice?.finish_reason === "string" && choice.finish_reason.trim().length > 0) {
+            finishReason = choice.finish_reason
+          }
           const token =
             typeof tokenFromDelta === "string" && tokenFromDelta.length > 0
               ? tokenFromDelta
@@ -550,7 +556,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       // Suggestions are optional; skip on failure.
     }
 
-    writeSse(res, "done", { ok: true })
+    const completionStatus: CompletionStatus =
+      finishReason === "length" ? "max_tokens_reached" : "completed"
+    writeSse(res, "done", {
+      ok: true,
+      finishReason: finishReason ?? "stop",
+      maxTokens: resolvedMaxTokens,
+      status: completionStatus,
+    })
     res.end()
   } catch (error) {
     const message = error instanceof Error ? error.message : "Request failed"

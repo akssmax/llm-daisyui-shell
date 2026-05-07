@@ -8,6 +8,13 @@ export const MISTRAL_MODELS = [
 
 export type MistralModel = (typeof MISTRAL_MODELS)[number]
 
+export type ChatCompletionStatus =
+  | "completed"
+  | "max_tokens_reached"
+  | "timeout"
+  | "upstream_error"
+  | "aborted_by_user"
+
 export interface LlmChatMessage {
   role: "system" | "user" | "assistant"
   content: string
