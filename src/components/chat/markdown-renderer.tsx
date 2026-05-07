@@ -16,6 +16,7 @@ import {
   CodeBlockCopyButton,
   CodeBlockHeader,
   CodeBlockTitle,
+  type CodeBlockShikiThemes,
 } from "@/components/ai-elements/code-block"
 import type { BundledLanguage } from "shiki"
 
@@ -70,43 +71,50 @@ const sanitizeSchema = {
   },
 } satisfies SanitizeSchema
 
-const MARKDOWN_COMPONENTS = {
-  callout: markdownComponentRegistry.Callout,
-  kpicard: markdownComponentRegistry.KpiCard,
-  a: (props: ComponentProps<"a">) => <a {...props} target="_blank" rel="noreferrer" />,
-  pre: ({ children }: ComponentProps<"pre">) => <>{children}</>,
-  code: ({
-    inline,
-    className,
-    children,
-    ...props
-  }: ComponentProps<"code"> & { inline?: boolean }) => {
-    const raw = extractTextContent(children)
-    if (inline) {
+function buildMarkdownComponents(codeThemes?: CodeBlockShikiThemes): Components {
+  return {
+    callout: markdownComponentRegistry.Callout,
+    kpicard: markdownComponentRegistry.KpiCard,
+    a: (props: ComponentProps<"a">) => <a {...props} target="_blank" rel="noreferrer" />,
+    pre: ({ children }: ComponentProps<"pre">) => <>{children}</>,
+    code: ({
+      inline,
+      className,
+      children,
+      ...props
+    }: ComponentProps<"code"> & { inline?: boolean }) => {
+      const raw = extractTextContent(children)
+      if (inline) {
+        return (
+          <code className={className} {...props}>
+            {children}
+          </code>
+        )
+      }
+
+      const languageMatch = /language-([\w-]+)/.exec(className ?? "")
+      const languageLabel = languageMatch?.[1] ?? "code"
+      const bundledLanguage = LANGUAGE_MAP[languageLabel.toLowerCase()] ?? "markdown"
+      const code = raw.replace(/\n$/, "")
+
       return (
-        <code className={className} {...props}>
-          {children}
-        </code>
+        <CodeBlock
+          code={code}
+          language={bundledLanguage}
+          className="my-4"
+          codeThemes={codeThemes}
+        >
+          <CodeBlockHeader>
+            <CodeBlockTitle>{languageLabel}</CodeBlockTitle>
+            <CodeBlockActions>
+              <CodeBlockCopyButton aria-label="Copy code block" />
+            </CodeBlockActions>
+          </CodeBlockHeader>
+        </CodeBlock>
       )
-    }
-
-    const languageMatch = /language-([\w-]+)/.exec(className ?? "")
-    const languageLabel = languageMatch?.[1] ?? "code"
-    const bundledLanguage = LANGUAGE_MAP[languageLabel.toLowerCase()] ?? "markdown"
-    const code = raw.replace(/\n$/, "")
-
-    return (
-      <CodeBlock code={code} language={bundledLanguage} className="my-4">
-        <CodeBlockHeader>
-          <CodeBlockTitle>{languageLabel}</CodeBlockTitle>
-          <CodeBlockActions>
-            <CodeBlockCopyButton aria-label="Copy code block" />
-          </CodeBlockActions>
-        </CodeBlockHeader>
-      </CodeBlock>
-    )
-  },
-} as unknown as Components
+    },
+  } as unknown as Components
+}
 
 function normalizeMarkdown(markdown: string): string {
   let output = markdown.replaceAll("\r\n", "\n")
@@ -128,14 +136,24 @@ function normalizeMarkdown(markdown: string): string {
   return output
 }
 
+const defaultMarkdownComponents = buildMarkdownComponents()
+
 export const MarkdownRenderer = memo(function MarkdownRenderer({
   markdown,
   className,
+  codeThemes,
 }: {
   markdown: string
   className?: string
+  /** Optional Shiki light/dark theme pair for fenced code blocks. */
+  codeThemes?: CodeBlockShikiThemes
 }) {
   const normalizedMarkdown = useMemo(() => normalizeMarkdown(markdown), [markdown])
+
+  const components = useMemo(
+    () => (codeThemes ? buildMarkdownComponents(codeThemes) : defaultMarkdownComponents),
+    [codeThemes]
+  )
 
   return (
     <div
@@ -152,8 +170,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
           rehypeKatex,
           rehypeHighlight,
         ]}
-        // Safe custom component map (whitelisted only)
-        components={MARKDOWN_COMPONENTS}
+        components={components}
       >
         {normalizedMarkdown}
       </ReactMarkdown>

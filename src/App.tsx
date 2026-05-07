@@ -4,17 +4,16 @@ import {
   Brain,
   MoreHorizontal,
   FileText,
-  Globe,
   Database,
   MessageCircle,
   MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
+  SlidersHorizontal,
   Table2,
   Trash2,
   Workflow,
-  Zap,
 } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -108,25 +107,24 @@ import {
   type RagSource,
 } from "@/lib/rag-memory"
 import { getThreadIdFromUrl, onThreadUrlChange, setThreadIdInUrl } from "@/lib/thread-url"
+import { PlaygroundPage } from "@/pages/playground/playground-page"
 
 type PageKey =
   | "new-chat"
   | "memory"
   | "knowledge"
-  | "sites"
   | "smart-tables"
-  | "page-boosts"
   | "routines"
+  | "playground"
 type IconType = React.ComponentType<{ className?: string }>
 
 const workspaceItems: Array<{ label: string; key: PageKey; icon: IconType }> = [
   { label: "New Chat", key: "new-chat", icon: MessageSquarePlus },
   { label: "Memory", key: "memory", icon: Brain },
   { label: "Knowledge", key: "knowledge", icon: Database },
-  { label: "Sites", key: "sites", icon: Globe },
   { label: "Smart Tables", key: "smart-tables", icon: Table2 },
-  { label: "Page Boosts", key: "page-boosts", icon: Zap },
   { label: "Routines", key: "routines", icon: Workflow },
+  { label: "Playground", key: "playground", icon: SlidersHorizontal },
 ]
 
 function SidebarCollapseButton() {
@@ -187,53 +185,6 @@ function MetricsRow({ items }: { items: Array<{ label: string; value: string }> 
   )
 }
 
-function SitesPage() {
-  return (
-    <div className="space-y-4">
-      <MetricsRow
-        items={[
-          { label: "Active domains", value: "24" },
-          { label: "Healthy", value: "19" },
-          { label: "Needs fixes", value: "5" },
-          { label: "Avg score", value: "86" },
-        ]}
-      />
-      <Card>
-        <CardHeader>
-          <CardTitle>Connected Sites</CardTitle>
-          <CardDescription>Monitor crawl and publish status.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Domain</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Pages</TableHead>
-                <TableHead>Updated</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {[
-                ["acme.com", "Healthy", "342", "2m ago"],
-                ["scalex.io", "Syncing", "119", "8m ago"],
-                ["zenpay.app", "Warning", "88", "18m ago"],
-              ].map((row) => (
-                <TableRow key={row[0]}>
-                  <TableCell className="font-medium">{row[0]}</TableCell>
-                  <TableCell>{row[1]}</TableCell>
-                  <TableCell>{row[2]}</TableCell>
-                  <TableCell>{row[3]}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
 function SmartTablesPage() {
   return (
     <div className="space-y-4">
@@ -275,45 +226,6 @@ function SmartTablesPage() {
               ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function PageBoostsPage() {
-  return (
-    <div className="space-y-4">
-      <MetricsRow
-        items={[
-          { label: "Boosts live", value: "7" },
-          { label: "Impressions", value: "142k" },
-          { label: "Clicks", value: "8.2k" },
-          { label: "CTR", value: "5.8%" },
-        ]}
-      />
-      <Card>
-        <CardHeader>
-          <CardTitle>Page Boost Campaigns</CardTitle>
-          <CardDescription>Prioritize high-impact pages and segments.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {[
-            ["/pricing", "High intent users", "Running"],
-            ["/integrations", "Activation cohort", "Draft"],
-            ["/careers", "Talent funnel", "Running"],
-          ].map((row) => (
-            <div
-              key={row[0]}
-              className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2"
-            >
-              <div>
-                <p className="text-sm font-medium text-foreground">{row[0]}</p>
-                <p className="text-xs text-muted-foreground">{row[1]}</p>
-              </div>
-              <Badge variant={row[2] === "Running" ? "default" : "secondary"}>{row[2]}</Badge>
-            </div>
-          ))}
         </CardContent>
       </Card>
     </div>
@@ -922,7 +834,10 @@ export function App() {
                 {workspaceItems.map((item) => (
                   <SidebarMenuItem key={item.label}>
                     <SidebarMenuButton
-                      isActive={item.key === activePage && (item.key !== "new-chat" || Boolean(activeThread))}
+                      isActive={
+                        item.key === activePage &&
+                        (item.key !== "new-chat" || Boolean(activeThread))
+                      }
                       tooltip={item.label}
                       onClick={() => {
                         if (item.key === "new-chat") {
@@ -1078,15 +993,6 @@ export function App() {
               />
             </StandardPageShell>
           )}
-          {activePage === "sites" && (
-            <StandardPageShell
-              title={currentLabel}
-              description="Connect and monitor external properties"
-              icon={Globe}
-            >
-              <SitesPage />
-            </StandardPageShell>
-          )}
           {activePage === "smart-tables" && (
             <StandardPageShell
               title={currentLabel}
@@ -1094,15 +1000,6 @@ export function App() {
               icon={Table2}
             >
               <SmartTablesPage />
-            </StandardPageShell>
-          )}
-          {activePage === "page-boosts" && (
-            <StandardPageShell
-              title={currentLabel}
-              description="Campaign performance and optimization"
-              icon={Zap}
-            >
-              <PageBoostsPage />
             </StandardPageShell>
           )}
           {activePage === "routines" && (
@@ -1114,6 +1011,7 @@ export function App() {
               <RoutinesPage />
             </StandardPageShell>
           )}
+          {activePage === "playground" && <PlaygroundPage />}
         </main>
       </SidebarInset>
       <AlertDialog

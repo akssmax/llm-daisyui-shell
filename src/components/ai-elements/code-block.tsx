@@ -108,10 +108,17 @@ const LineSpan = ({
 );
 
 // Types
+export type CodeBlockShikiThemes = {
+  light: BundledTheme;
+  dark: BundledTheme;
+};
+
 type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
   language: BundledLanguage;
   showLineNumbers?: boolean;
+  /** When set, Shiki uses these bundled themes for light/dual highlighting. */
+  codeThemes?: CodeBlockShikiThemes;
 };
 
 interface TokenizedCode {
@@ -141,10 +148,26 @@ const tokensCache = new Map<string, TokenizedCode>();
 // Subscribers for async token updates
 const subscribers = new Map<string, Set<(result: TokenizedCode) => void>>();
 
-const getTokensCacheKey = (code: string, language: BundledLanguage) => {
+const SHIKI_THEMES_LOADED: BundledTheme[] = [
+  "github-light",
+  "github-dark",
+  "nord",
+  "monokai",
+  "min-light",
+  "min-dark",
+  "one-light",
+  "one-dark-pro",
+];
+
+const getTokensCacheKey = (
+  code: string,
+  language: BundledLanguage,
+  lightTheme: BundledTheme,
+  darkTheme: BundledTheme
+) => {
   const start = code.slice(0, 100);
   const end = code.length > 100 ? code.slice(-100) : "";
-  return `${language}:${code.length}:${start}:${end}`;
+  return `${language}:${lightTheme}:${darkTheme}:${code.length}:${start}:${end}`;
 };
 
 const getHighlighter = (
@@ -157,7 +180,7 @@ const getHighlighter = (
 
   const highlighterPromise = createHighlighter({
     langs: [language],
-    themes: ["github-light", "github-dark"],
+    themes: [...SHIKI_THEMES_LOADED],
   });
 
   highlighterCache.set(language, highlighterPromise);
@@ -181,13 +204,24 @@ const createRawTokens = (code: string): TokenizedCode => ({
 });
 
 // Synchronous highlight with callback for async results
+const defaultCodeThemes = (): { light: BundledTheme; dark: BundledTheme } => ({
+  light: "github-light",
+  dark: "github-dark",
+});
+
 export const highlightCode = (
   code: string,
   language: BundledLanguage,
   // oxlint-disable-next-line eslint-plugin-promise(prefer-await-to-callbacks)
-  callback?: (result: TokenizedCode) => void
+  callback?: (result: TokenizedCode) => void,
+  themes: { light: BundledTheme; dark: BundledTheme } = defaultCodeThemes()
 ): TokenizedCode | null => {
-  const tokensCacheKey = getTokensCacheKey(code, language);
+  const tokensCacheKey = getTokensCacheKey(
+    code,
+    language,
+    themes.light,
+    themes.dark
+  );
 
   // Return cached result if available
   const cached = tokensCache.get(tokensCacheKey);
@@ -213,8 +247,8 @@ export const highlightCode = (
       const result = highlighter.codeToTokens(code, {
         lang: langToUse,
         themes: {
-          dark: "github-dark",
-          light: "github-light",
+          dark: themes.dark,
+          light: themes.light,
         },
       });
 
@@ -375,30 +409,34 @@ export const CodeBlockContent = ({
   code,
   language,
   showLineNumbers = false,
+  codeThemes = defaultCodeThemes(),
 }: {
   code: string;
   language: BundledLanguage;
   showLineNumbers?: boolean;
+  codeThemes?: CodeBlockShikiThemes;
 }) => {
   // Memoized raw tokens for immediate display
   const rawTokens = useMemo(() => createRawTokens(code), [code]);
 
   // Synchronous cache lookup — avoids setState in effect for cached results
   const syncTokens = useMemo(
-    () => highlightCode(code, language) ?? rawTokens,
-    [code, language, rawTokens]
+    () => highlightCode(code, language, undefined, codeThemes) ?? rawTokens,
+    [code, language, rawTokens, codeThemes]
   );
 
   // Async highlighting result (populated after shiki loads)
   const [asyncTokens, setAsyncTokens] = useState<TokenizedCode | null>(null);
-  const asyncKeyRef = useRef({ code, language });
+  const asyncKeyRef = useRef({ code, language, themes: codeThemes });
 
   // Invalidate stale async tokens synchronously during render
   if (
     asyncKeyRef.current.code !== code ||
-    asyncKeyRef.current.language !== language
+    asyncKeyRef.current.language !== language ||
+    asyncKeyRef.current.themes.light !== codeThemes.light ||
+    asyncKeyRef.current.themes.dark !== codeThemes.dark
   ) {
-    asyncKeyRef.current = { code, language };
+    asyncKeyRef.current = { code, language, themes: codeThemes };
     setAsyncTokens(null);
   }
 
@@ -409,12 +447,12 @@ export const CodeBlockContent = ({
       if (!cancelled) {
         setAsyncTokens(result);
       }
-    });
+    }, codeThemes);
 
     return () => {
       cancelled = true;
     };
-  }, [code, language]);
+  }, [code, language, codeThemes]);
 
   const tokenized = asyncTokens ?? syncTokens;
 
@@ -429,6 +467,7 @@ export const CodeBlock = ({
   code,
   language,
   showLineNumbers = false,
+  codeThemes,
   className,
   children,
   ...props
@@ -443,6 +482,7 @@ export const CodeBlock = ({
           code={code}
           language={language}
           showLineNumbers={showLineNumbers}
+          codeThemes={codeThemes}
         />
       </CodeBlockContainer>
     </CodeBlockContext.Provider>

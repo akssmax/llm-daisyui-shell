@@ -67,6 +67,7 @@ import {
   ChainOfThoughtSearchResults,
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought"
+import { Shimmer } from "@/components/ai-elements/shimmer"
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion"
 import {
   Queue,
@@ -389,6 +390,7 @@ export function AIElementsChatShell({
   const [sourcePanelItems, setSourcePanelItems] = useState<MemorySourceEntry[]>([])
   const [sourcePanelTitle, setSourcePanelTitle] = useState("Sources")
   const processingQueueRef = useRef(false)
+  const thoughtStartMsRef = useRef<Record<string, number>>({})
   const messages = thread.messages
   const messagesRef = useRef(messages)
   const pendingQueue = thread.pendingQueue ?? EMPTY_PENDING_QUEUE
@@ -535,6 +537,7 @@ export function AIElementsChatShell({
         message: toTextMessage(assistantId, "assistant", ""),
         meta: {},
       }
+      thoughtStartMsRef.current[assistantId] = Date.now()
 
       updateThreadMessages((prev) => [...prev, assistantItem])
 
@@ -687,6 +690,33 @@ export function AIElementsChatShell({
         setChainOfThoughtOpen((prev) => ({ ...prev, [assistantId]: true }))
         setAssistantTools(pendingToolCalls)
       }
+      const finalizeThoughtDuration = () => {
+        const startedMs = thoughtStartMsRef.current[assistantId]
+        if (!startedMs) return
+        const durationSeconds = Math.max(1, Math.round((Date.now() - startedMs) / 1000))
+        delete thoughtStartMsRef.current[assistantId]
+        updateThreadMessages((prev) =>
+          prev.map((it) =>
+            it.id === assistantId
+              ? {
+                  ...it,
+                  meta: {
+                    ...(it.meta ?? {}),
+                    reasoning: {
+                      content: it.meta?.reasoning?.content ?? "",
+                      durationSeconds,
+                    },
+                  },
+                }
+              : it
+          )
+        )
+      }
+      const scheduleChainClose = () => {
+        window.setTimeout(() => {
+          setChainOfThoughtOpen((prev) => ({ ...prev, [assistantId]: false }))
+        }, 900)
+      }
       const finalizeToolCalls = (errorText?: string) => {
         if (!hasToolCalls) return
         if (errorText) {
@@ -697,15 +727,9 @@ export function AIElementsChatShell({
               state: "output-error",
             }))
           )
-          window.setTimeout(() => {
-            setChainOfThoughtOpen((prev) => ({ ...prev, [assistantId]: false }))
-          }, 900)
           return
         }
         setAssistantTools(resolvedToolCalls)
-        window.setTimeout(() => {
-          setChainOfThoughtOpen((prev) => ({ ...prev, [assistantId]: false }))
-        }, 900)
       }
       const flushBufferedTokens = () => {
         if (!tokenBuffer) return
@@ -814,6 +838,8 @@ export function AIElementsChatShell({
         }
         flushBufferedTokens()
         finalizeToolCalls()
+        finalizeThoughtDuration()
+        scheduleChainClose()
         setStatus("ready")
       } catch (error) {
         const isAbort =
@@ -826,6 +852,8 @@ export function AIElementsChatShell({
           }
           flushBufferedTokens()
           finalizeToolCalls("Cancelled")
+          finalizeThoughtDuration()
+          scheduleChainClose()
           setStatus("ready")
           return
         }
@@ -836,6 +864,8 @@ export function AIElementsChatShell({
         }
         flushBufferedTokens()
         finalizeToolCalls(errorMessage)
+        finalizeThoughtDuration()
+        scheduleChainClose()
         updateThreadMessages((prev) =>
           prev.map((it) =>
             it.id === assistantId
@@ -881,7 +911,7 @@ export function AIElementsChatShell({
       const isBusy = status === "submitted" || status === "streaming"
       const queueLen = thread.pendingQueue?.length ?? 0
       if (!isBusy && queueLen === 0) {
-        await runMessage(message)
+        void runMessage(message)
         return
       }
 
@@ -953,7 +983,7 @@ export function AIElementsChatShell({
   return (
     <div className={cn("relative flex min-h-0 flex-1 flex-col overflow-hidden", className)}>
       {/* Top helper strip to showcase non-message components */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/30 px-4 py-2">
+      <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-base-300 bg-base-200 px-4">
         <div className="flex min-w-0 items-center gap-2">
           <SidebarTrigger className="md:hidden" />
           <p className="truncate text-sm font-medium text-foreground">{thread.title}</p>
@@ -1075,9 +1105,21 @@ export function AIElementsChatShell({
                               }
                             >
                               <ChainOfThoughtHeader>
-                                {uniqueSourceTitles.length > 0
-                                  ? `Generated using ${uniqueSourceTitles.length} source${uniqueSourceTitles.length === 1 ? "" : "s"}`
-                                  : "Chain of Thought"}
+                                {isLatestAssistantMessage && status === "streaming" ? (
+                                  <Shimmer
+                                    as="span"
+                                    className="text-sm text-muted-foreground"
+                                    duration={2.2}
+                                  >
+                                    Thinking...
+                                  </Shimmer>
+                                ) : typeof meta?.reasoning?.durationSeconds === "number" ? (
+                                  `Thought for ${Math.max(1, meta.reasoning.durationSeconds)} seconds`
+                                ) : uniqueSourceTitles.length > 0 ? (
+                                  `Generated using ${uniqueSourceTitles.length} source${uniqueSourceTitles.length === 1 ? "" : "s"}`
+                                ) : (
+                                  "Chain of Thought"
+                                )}
                               </ChainOfThoughtHeader>
                               <ChainOfThoughtContent>
                                 {traceSteps.map((step) => (
@@ -1221,7 +1263,7 @@ export function AIElementsChatShell({
         <ConversationScrollButton />
       </Conversation>
 
-      <div className="border-t border-border bg-background">
+      <div className="border-t border-base-300 bg-background">
         <div className="mx-auto grid max-w-3xl gap-3 p-4">
           {/* Plan is intentionally hidden for now; queue lives above the prompt input. */}
           {pendingQueue.length > 0 ? (

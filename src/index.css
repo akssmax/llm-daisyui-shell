@@ -171,6 +171,13 @@
 }
 
 @layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
   * {
     @apply border-border outline-ring/50;
     }
@@ -282,5 +289,10 @@
 
   .chat-markdown :where(tbody tr:last-child td) {
     @apply border-b-0;
+  }
+
+  /* Playground: isolate preview subtree; token colors are applied inline from PlaygroundUiConfig. */
+  [data-playground-preview] {
+    isolation: isolate;
   }
 }
