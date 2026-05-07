@@ -50,12 +50,10 @@ export function PlaygroundPage() {
       ) : (
         <ResizablePanelGroup
           orientation="horizontal"
-          autoSaveId="playground-layout-v2"
           className="min-h-0 flex-1 overflow-hidden"
         >
           <ResizablePanel
             id="playground-settings-panel"
-            order={1}
             defaultSize="360px"
             minSize="320px"
             maxSize="400px"
@@ -71,7 +69,6 @@ export function PlaygroundPage() {
           <ResizableHandle withHandle />
           <ResizablePanel
             id="playground-preview-panel"
-            order={2}
             defaultSize={70}
             minSize="480px"
             className="min-w-0 overflow-hidden"
