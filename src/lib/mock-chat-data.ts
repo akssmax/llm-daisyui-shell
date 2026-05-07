@@ -38,6 +38,8 @@ export type MockAssistantMeta = {
 export type MockChatItem = {
   id: string
   message: UIMessage
+  /** Cached estimate of message body tokens; updated when content changes. */
+  contentTokenEstimate?: number
   // Used by AI Elements components that are outside the raw message shape
   meta?: MockAssistantMeta
   // Multiple branches/versions per message

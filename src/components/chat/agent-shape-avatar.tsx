@@ -124,7 +124,7 @@ export function AgentShapeAvatar({
     >
       <motion.span
         aria-hidden
-        className="absolute -inset-0.5"
+        className="absolute inset-0"
         whileHover={{ rotate: 10, scale: 1.03 }}
         transition={{ duration: 0.25, ease: "easeOut" }}
         style={{

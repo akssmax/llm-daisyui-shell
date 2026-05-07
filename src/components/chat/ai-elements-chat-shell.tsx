@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import type { FileUIPart, UIMessage } from "ai"
+import type { FileUIPart } from "ai"
 
 import {
   Context,
@@ -17,25 +17,6 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation"
-import {
-  InlineCitation,
-  InlineCitationCard,
-  InlineCitationCardBody,
-  InlineCitationCardTrigger,
-  InlineCitationSource,
-} from "@/components/ai-elements/inline-citation"
-import {
-  Message,
-  MessageActions,
-  MessageAction,
-  MessageBranch,
-  MessageBranchContent,
-  MessageBranchNext,
-  MessageBranchPage,
-  MessageBranchPrevious,
-  MessageBranchSelector,
-  MessageContent,
-} from "@/components/ai-elements/message"
 import {
   Attachment,
   AttachmentInfo,
@@ -59,16 +40,8 @@ import {
   usePromptInputAttachments,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
-import {
-  ChainOfThought,
-  ChainOfThoughtContent,
-  ChainOfThoughtHeader,
-  ChainOfThoughtSearchResult,
-  ChainOfThoughtSearchResults,
-  ChainOfThoughtStep,
-} from "@/components/ai-elements/chain-of-thought"
-import { Shimmer } from "@/components/ai-elements/shimmer"
-import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion"
+import { AGENT_AVATAR_SHAPES } from "@/components/chat/agent-shape-avatar"
+import { VirtualizedConversationMessages } from "@/components/chat/virtualized-conversation-messages"
 import {
   Queue,
   QueueItem,
@@ -100,7 +73,6 @@ import {
 } from "@/components/ui/sheet"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
-import { MarkdownRenderer } from "@/components/chat/markdown-renderer"
 import { streamChat } from "@/lib/llm-service"
 import type { ChatThread, PendingQueueItem } from "@/lib/chat-threads"
 import { buildMemoryContext, type UserMemory } from "@/lib/user-memory"
@@ -109,21 +81,14 @@ import { getRetrievalDecision } from "@/lib/retrieval-gating"
 import { nanoid } from "nanoid"
 import { MISTRAL_MODELS, type MistralModel } from "@/lib/llm-types"
 import type { MemorySourceEntry, MockChatItem, MockToolCall } from "@/lib/mock-chat-data"
-
 import {
-  Brain,
-  Check,
-  Copy,
-  Lightbulb,
-  ListOrdered,
-  Mic,
-  Plus,
-  Sparkles,
-  BookOpen,
-  ThumbsDown,
-  ThumbsUp,
-  Trash2,
-} from "lucide-react"
+  estimateTokenCount,
+  getMessageText,
+  replaceMessageById,
+  toTextMessage,
+} from "@/lib/chat-message-utils"
+
+import { Brain, Lightbulb, ListOrdered, Mic, Plus, Sparkles, Trash2 } from "lucide-react"
 
 type ChatStatus = "ready" | "submitted" | "streaming" | "error"
 
@@ -199,17 +164,6 @@ function pickRandomEmptyStateActions(
   return shuffled.slice(0, Math.min(count, shuffled.length))
 }
 
-function toTextMessage(id: string, role: UIMessage["role"], text: string): UIMessage {
-  return { id, role, parts: [{ type: "text", text }] }
-}
-
-function getMessageText(message: UIMessage): string {
-  return message.parts
-    .filter((p): p is { type: "text"; text: string } => p.type === "text")
-    .map((p) => p.text)
-    .join("")
-}
-
 function summarizeMessagesForSession(messages: MockChatItem[]): string {
   const history = messages
     .slice(-24)
@@ -221,76 +175,6 @@ function summarizeMessagesForSession(messages: MockChatItem[]): string {
     })
     .filter((line): line is string => Boolean(line))
   return history.join("\n")
-}
-
-function toChainStepStatus(state: MockToolCall["state"]): "complete" | "active" | "pending" {
-  if (state === "output-available") return "complete"
-  if (state === "output-error" || state === "output-denied") return "pending"
-  return "active"
-}
-
-type UnifiedTraceStep = {
-  id: string
-  label: string
-  description?: string
-  status: "complete" | "active" | "pending"
-  sources?: string[]
-}
-
-function buildUnifiedTraceSteps(params: {
-  itemId: string
-  reasoning?: string
-  tools?: MockToolCall[]
-  sources?: string[]
-  isStreaming: boolean
-  hasAssistantText: boolean
-}): UnifiedTraceStep[] {
-  const { itemId, reasoning, tools, sources, isStreaming, hasAssistantText } = params
-  const steps: UnifiedTraceStep[] = []
-
-  if (reasoning?.trim()) {
-    steps.push({
-      id: `${itemId}-reasoning`,
-      label: "Understanding request",
-      description: reasoning.trim().slice(0, 220),
-      status: "complete",
-    })
-  }
-
-  if (tools?.length) {
-    for (const [index, tool] of tools.entries()) {
-      steps.push({
-        id: `${itemId}-tool-${index}`,
-        label: tool.description || tool.name,
-        description:
-          tool.state === "output-available"
-            ? "Completed"
-            : tool.state === "output-error"
-              ? tool.error || "Error"
-              : "In progress",
-        status: toChainStepStatus(tool.state),
-      })
-    }
-  }
-
-  if (sources && sources.length > 0) {
-    steps.push({
-      id: `${itemId}-sources`,
-      label: "Gathering sources",
-      description: `Retrieved ${sources.length} source${sources.length === 1 ? "" : "s"}`,
-      status: isStreaming ? "active" : "complete",
-      sources,
-    })
-  }
-
-  steps.push({
-    id: `${itemId}-generation`,
-    label: "Generating response",
-    description: isStreaming ? "In progress" : "Completed",
-    status: isStreaming ? "active" : hasAssistantText ? "complete" : "pending",
-  })
-
-  return steps
 }
 
 function extractMemoryFromPrompt(text: string): { category: "profile" | "preferences" | "facts"; value: string } | null {
@@ -324,11 +208,6 @@ function extractMemoryFromPrompt(text: string): { category: "profile" | "prefere
   }
 
   return null
-}
-
-function estimateTokenCount(text: string): number {
-  if (!text.trim()) return 0
-  return Math.ceil(text.length / 4)
 }
 
 const MODEL_CONTEXT_LIMITS: Record<MistralModel, number> = {
@@ -391,6 +270,14 @@ export function AIElementsChatShell({
   const [sourcePanelTitle, setSourcePanelTitle] = useState("Sources")
   const processingQueueRef = useRef(false)
   const thoughtStartMsRef = useRef<Record<string, number>>({})
+  const liveAgentShape = useMemo(() => {
+    const id = thread.threadId || "default"
+    let hash = 0
+    for (let i = 0; i < id.length; i += 1) {
+      hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+    }
+    return AGENT_AVATAR_SHAPES[hash % AGENT_AVATAR_SHAPES.length] ?? "Circle"
+  }, [thread.threadId])
   const messages = thread.messages
   const messagesRef = useRef(messages)
   const pendingQueue = thread.pendingQueue ?? EMPTY_PENDING_QUEUE
@@ -399,19 +286,25 @@ export function AIElementsChatShell({
     messagesRef.current = messages
   }, [messages])
 
+  const threadTokenTotal = useMemo(() => {
+    return messages.reduce((total, item) => {
+      return (
+        total +
+        (item.contentTokenEstimate ?? estimateTokenCount(getMessageText(item.message)))
+      )
+    }, 0)
+  }, [messages])
+
   const contextMetrics = useMemo(() => {
     const inputTokens = estimateTokenCount(text)
-    const messageTokens = messages.reduce((total, item) => {
-      return total + estimateTokenCount(getMessageText(item.message))
-    }, 0)
-    const usedTokens = inputTokens + messageTokens
+    const usedTokens = inputTokens + threadTokenTotal
     const maxTokens = MODEL_CONTEXT_LIMITS[selectedModel] ?? 8192
 
     return {
       maxTokens,
       usedTokens,
     }
-  }, [messages, selectedModel, text])
+  }, [selectedModel, text, threadTokenTotal])
 
   const assistant = useMemo(() => messages.find((m) => m.message.role === "assistant"), [messages])
   const latestAssistantMessageId = useMemo(() => {
@@ -524,6 +417,7 @@ export function AIElementsChatShell({
           id: userId,
           message: toTextMessage(userId, "user", userText),
           meta: userAttachments.length > 0 ? { attachments: userAttachments } : undefined,
+          contentTokenEstimate: estimateTokenCount(userText),
         },
       ])
 
@@ -536,6 +430,7 @@ export function AIElementsChatShell({
         id: assistantId,
         message: toTextMessage(assistantId, "assistant", ""),
         meta: {},
+        contentTokenEstimate: 0,
       }
       thoughtStartMsRef.current[assistantId] = Date.now()
 
@@ -671,18 +566,14 @@ export function AIElementsChatShell({
       }
       const setAssistantTools = (tools: MockToolCall[]) => {
         updateThreadMessages((prev) =>
-          prev.map((item) =>
-            item.id === assistantId
-              ? {
-                  ...item,
-                  meta: {
-                    ...(item.meta ?? {}),
-                    tools: tools.length > 0 ? tools : item.meta?.tools,
-                    memorySources: memorySourceEntries.length > 0 ? memorySourceEntries : item.meta?.memorySources,
-                  },
-                }
-              : item
-          )
+          replaceMessageById(prev, assistantId, (item) => ({
+            ...item,
+            meta: {
+              ...(item.meta ?? {}),
+              tools: tools.length > 0 ? tools : item.meta?.tools,
+              memorySources: memorySourceEntries.length > 0 ? memorySourceEntries : item.meta?.memorySources,
+            },
+          }))
         )
       }
       const hasToolCalls = pendingToolCalls.length > 0 || resolvedToolCalls.length > 0
@@ -696,20 +587,16 @@ export function AIElementsChatShell({
         const durationSeconds = Math.max(1, Math.round((Date.now() - startedMs) / 1000))
         delete thoughtStartMsRef.current[assistantId]
         updateThreadMessages((prev) =>
-          prev.map((it) =>
-            it.id === assistantId
-              ? {
-                  ...it,
-                  meta: {
-                    ...(it.meta ?? {}),
-                    reasoning: {
-                      content: it.meta?.reasoning?.content ?? "",
-                      durationSeconds,
-                    },
-                  },
-                }
-              : it
-          )
+          replaceMessageById(prev, assistantId, (it) => ({
+            ...it,
+            meta: {
+              ...(it.meta ?? {}),
+              reasoning: {
+                content: it.meta?.reasoning?.content ?? "",
+                durationSeconds,
+              },
+            },
+          }))
         )
       }
       const scheduleChainClose = () => {
@@ -739,24 +626,22 @@ export function AIElementsChatShell({
           const lastIndex = prev.length - 1
           const last = prev[lastIndex]
           if (!last || last.id !== assistantId) {
-            return prev.map((it) =>
-              it.id === assistantId
-                ? {
-                    ...it,
-                    message: toTextMessage(
-                      it.message.id,
-                      "assistant",
-                      `${getMessageText(it.message)}${chunk}`
-                    ),
-                  }
-                : it
-            )
+            return replaceMessageById(prev, assistantId, (it) => {
+              const nextText = `${getMessageText(it.message)}${chunk}`
+              return {
+                ...it,
+                message: toTextMessage(it.message.id, "assistant", nextText),
+                contentTokenEstimate: estimateTokenCount(nextText),
+              }
+            })
           }
           const previous = getMessageText(last.message)
+          const nextText = `${previous}${chunk}`
           const next = prev.slice()
           next[lastIndex] = {
             ...last,
-            message: toTextMessage(last.message.id, "assistant", `${previous}${chunk}`),
+            message: toTextMessage(last.message.id, "assistant", nextText),
+            contentTokenEstimate: estimateTokenCount(nextText),
           }
           return next
         })
@@ -786,47 +671,26 @@ export function AIElementsChatShell({
           },
           onReasoning: (reasoning) => {
             updateThreadMessages((prev) =>
-              prev.map((it) =>
-                it.id === assistantId
-                  ? {
-                      ...it,
-                      meta: {
-                        ...(it.meta ?? {}),
-                        reasoning,
-                      },
-                    }
-                  : it
-              )
+              replaceMessageById(prev, assistantId, (it) => ({
+                ...it,
+                meta: { ...(it.meta ?? {}), reasoning },
+              }))
             )
           },
           onSources: (sources) => {
             updateThreadMessages((prev) =>
-              prev.map((it) =>
-                it.id === assistantId
-                  ? {
-                      ...it,
-                      meta: {
-                        ...(it.meta ?? {}),
-                        sources,
-                      },
-                    }
-                  : it
-              )
+              replaceMessageById(prev, assistantId, (it) => ({
+                ...it,
+                meta: { ...(it.meta ?? {}), sources },
+              }))
             )
           },
           onCitations: (citations) => {
             updateThreadMessages((prev) =>
-              prev.map((it) =>
-                it.id === assistantId
-                  ? {
-                      ...it,
-                      meta: {
-                        ...(it.meta ?? {}),
-                        citations,
-                      },
-                    }
-                  : it
-              )
+              replaceMessageById(prev, assistantId, (it) => ({
+                ...it,
+                meta: { ...(it.meta ?? {}), citations },
+              }))
             )
           },
           signal: controller.signal,
@@ -867,18 +731,14 @@ export function AIElementsChatShell({
         finalizeThoughtDuration()
         scheduleChainClose()
         updateThreadMessages((prev) =>
-          prev.map((it) =>
-            it.id === assistantId
-              ? {
-                  ...it,
-                  message: toTextMessage(
-                    it.message.id,
-                    "assistant",
-                    `Unable to complete response: ${errorMessage}`
-                  ),
-                }
-              : it
-          )
+          replaceMessageById(prev, assistantId, (it) => {
+            const errText = `Unable to complete response: ${errorMessage}`
+            return {
+              ...it,
+              message: toTextMessage(it.message.id, "assistant", errText),
+              contentTokenEstimate: estimateTokenCount(errText),
+            }
+          })
         )
         setStatus("error")
       } finally {
@@ -973,6 +833,28 @@ export function AIElementsChatShell({
     abortController?.abort()
   }, [abortController])
 
+  const handleBranchChange = useCallback((messageId: string, branch: number) => {
+    setActiveBranch((prev) => ({ ...prev, [messageId]: branch }))
+  }, [])
+
+  const handleChainOpenChange = useCallback((messageId: string, open: boolean) => {
+    setChainOfThoughtOpen((prev) => ({ ...prev, [messageId]: open }))
+  }, [])
+
+  const handleMessageCopy = useCallback((messageId: string, text: string) => {
+    void navigator.clipboard.writeText(text)
+    setCopiedMessageId(messageId)
+    window.setTimeout(() => {
+      setCopiedMessageId((current) => (current === messageId ? null : current))
+    }, 1600)
+  }, [])
+
+  const handleOpenMemorySources = useCallback((items: MemorySourceEntry[]) => {
+    setSourcePanelItems(items)
+    setSourcePanelTitle("Sources")
+    setSourcePanelOpen(true)
+  }, [])
+
   const handleSuggestionClick = useCallback(
     (suggestionText: string) => {
       handleSubmit({ text: suggestionText, files: [] })
@@ -1010,7 +892,7 @@ export function AIElementsChatShell({
       <Conversation>
         <ConversationContent
           className={cn(
-            "mx-auto w-full max-w-[768px]",
+            "px-0 py-4",
             messages.length === 0 && "min-h-full"
           )}
         >
@@ -1045,218 +927,21 @@ export function AIElementsChatShell({
               </div>
             </ConversationEmptyState>
           ) : (
-            messages.map((item) => {
-              const msg = item.message
-              const meta = item.meta
-              const branchIndex = activeBranch[item.id] ?? 0
-              const branchCount = item.branches?.length ?? 0
-              const isLatestAssistantMessage =
-                msg.role === "assistant" && item.id === latestAssistantMessageId
-              const showFeedbackBar =
-                msg.role === "assistant" &&
-                (!isLatestAssistantMessage || status !== "streaming")
-
-              return (
-                <MessageBranch
-                  key={item.id}
-                  defaultBranch={branchIndex}
-                  onBranchChange={(next) =>
-                    setActiveBranch((prev) => ({ ...prev, [item.id]: next }))
-                  }
-                >
-                  <MessageBranchContent>
-                    <Message from={msg.role}>
-                      <div className="space-y-2">
-                        {msg.role === "user" && meta?.attachments?.length ? (
-                          <Attachments variant="grid">
-                            {meta.attachments.map((attachment) => (
-                              <Attachment key={attachment.id} data={attachment}>
-                                <AttachmentPreview />
-                              </Attachment>
-                            ))}
-                          </Attachments>
-                        ) : null}
-
-                        {msg.role === "assistant" && (() => {
-                          const sourceTitles = [
-                            ...(meta?.sources?.map((source) => source.title) ?? []),
-                            ...(meta?.memorySources?.map((source) => source.title) ?? []),
-                          ]
-                          const uniqueSourceTitles = Array.from(new Set(sourceTitles))
-                          const traceSteps = buildUnifiedTraceSteps({
-                            hasAssistantText: Boolean(getMessageText(msg).trim()),
-                            isStreaming: isLatestAssistantMessage && status === "streaming",
-                            itemId: item.id,
-                            reasoning: meta?.reasoning?.content,
-                            sources: uniqueSourceTitles,
-                            tools: meta?.tools,
-                          })
-
-                          if (traceSteps.length === 0) return null
-                          return (
-                            <ChainOfThought
-                              defaultOpen={isLatestAssistantMessage && status === "streaming"}
-                              open={
-                                chainOfThoughtOpen[item.id] ??
-                                (isLatestAssistantMessage && status === "streaming")
-                              }
-                              onOpenChange={(open) =>
-                                setChainOfThoughtOpen((prev) => ({ ...prev, [item.id]: open }))
-                              }
-                            >
-                              <ChainOfThoughtHeader>
-                                {isLatestAssistantMessage && status === "streaming" ? (
-                                  <Shimmer
-                                    as="span"
-                                    className="text-sm text-muted-foreground"
-                                    duration={2.2}
-                                  >
-                                    Thinking...
-                                  </Shimmer>
-                                ) : typeof meta?.reasoning?.durationSeconds === "number" ? (
-                                  `Thought for ${Math.max(1, meta.reasoning.durationSeconds)} seconds`
-                                ) : uniqueSourceTitles.length > 0 ? (
-                                  `Generated using ${uniqueSourceTitles.length} source${uniqueSourceTitles.length === 1 ? "" : "s"}`
-                                ) : (
-                                  "Chain of Thought"
-                                )}
-                              </ChainOfThoughtHeader>
-                              <ChainOfThoughtContent>
-                                {traceSteps.map((step) => (
-                                  <ChainOfThoughtStep
-                                    key={step.id}
-                                    label={step.label}
-                                    description={step.description}
-                                    status={step.status}
-                                  >
-                                    {step.sources?.length ? (
-                                      <ChainOfThoughtSearchResults>
-                                        {step.sources.map((source) => (
-                                          <ChainOfThoughtSearchResult key={`${step.id}-${source}`}>
-                                            {source}
-                                          </ChainOfThoughtSearchResult>
-                                        ))}
-                                      </ChainOfThoughtSearchResults>
-                                    ) : null}
-                                  </ChainOfThoughtStep>
-                                ))}
-                              </ChainOfThoughtContent>
-                            </ChainOfThought>
-                          )
-                        })()}
-
-                        <MessageContent>
-                          {msg.role === "assistant" ? (
-                            <MarkdownRenderer markdown={getMessageText(msg)} />
-                          ) : (
-                            getMessageText(msg)
-                          )}
-                        </MessageContent>
-
-                        {meta?.citations?.length ? (
-                          <InlineCitation>
-                            {meta.citations.map((c) => (
-                              <InlineCitationCard key={c.href}>
-                                <InlineCitationCardTrigger sources={[c.href]} />
-                                <InlineCitationCardBody>
-                                  <InlineCitationSource
-                                    title={c.label}
-                                    url={c.href}
-                                    description="Citation"
-                                  />
-                                </InlineCitationCardBody>
-                              </InlineCitationCard>
-                            ))}
-                          </InlineCitation>
-                        ) : null}
-
-                        {showFeedbackBar ? (
-                          <MessageActions className="w-fit items-center gap-1 rounded-xl border border-border/70 bg-card/80 p-1 shadow-xs backdrop-blur supports-[backdrop-filter]:bg-card/65">
-                            <MessageAction
-                              tooltip="Copy message"
-                              variant="ghost"
-                              size="icon-sm"
-                              className="rounded-lg text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                              onClick={async () => {
-                                const text = getMessageText(msg)
-                                if (!text) return
-                                await navigator.clipboard.writeText(text)
-                                setCopiedMessageId(item.id)
-                                window.setTimeout(() => {
-                                  setCopiedMessageId((current) =>
-                                    current === item.id ? null : current
-                                  )
-                                }, 1600)
-                              }}
-                            >
-                              {copiedMessageId === item.id ? (
-                                <Check className="size-4" />
-                              ) : (
-                                <Copy className="size-4" />
-                              )}
-                            </MessageAction>
-                            <MessageAction
-                              tooltip="Helpful"
-                              variant="ghost"
-                              size="icon-sm"
-                              className="rounded-lg text-muted-foreground hover:bg-emerald-500/12 hover:text-emerald-600 dark:hover:text-emerald-400"
-                            >
-                              <ThumbsUp className="size-4" />
-                            </MessageAction>
-                            <MessageAction
-                              tooltip="Not helpful"
-                              variant="ghost"
-                              size="icon-sm"
-                              className="rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                            >
-                              <ThumbsDown className="size-4" />
-                            </MessageAction>
-                            {msg.role === "assistant" && meta?.memorySources?.length ? (
-                              <MessageAction
-                                tooltip="Sources"
-                                variant="ghost"
-                                size="icon-sm"
-                                className="ml-1 rounded-lg text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                                onClick={() => {
-                                  setSourcePanelItems(meta.memorySources ?? [])
-                                  setSourcePanelTitle("Sources")
-                                  setSourcePanelOpen(true)
-                                }}
-                              >
-                                <BookOpen className="size-4" />
-                              </MessageAction>
-                            ) : null}
-                          </MessageActions>
-                        ) : null}
-                        {isLatestAssistantMessage && llmSuggestions.length > 0 ? (
-                          <Suggestions className="px-1">
-                            {llmSuggestions.map((suggestionText) => (
-                              <Suggestion
-                                key={suggestionText}
-                                className="font-normal text-foreground"
-                                onClick={() => handleSuggestionClick(suggestionText)}
-                                suggestion={suggestionText}
-                              >
-                                <Sparkles size={16} />
-                                {suggestionText}
-                              </Suggestion>
-                            ))}
-                          </Suggestions>
-                        ) : null}
-                      </div>
-                    </Message>
-                  </MessageBranchContent>
-
-                  {branchCount > 1 ? (
-                    <MessageBranchSelector className="px-0">
-                      <MessageBranchPrevious />
-                      <MessageBranchPage />
-                      <MessageBranchNext />
-                    </MessageBranchSelector>
-                  ) : null}
-                </MessageBranch>
-              )
-            })
+            <VirtualizedConversationMessages
+              messages={messages}
+              latestAssistantMessageId={latestAssistantMessageId}
+              activeBranch={activeBranch}
+              status={status}
+              chainOfThoughtOpen={chainOfThoughtOpen}
+              liveAgentShape={liveAgentShape}
+              llmSuggestions={llmSuggestions}
+              copiedMessageId={copiedMessageId}
+              onBranchChange={handleBranchChange}
+              onChainOpenChange={handleChainOpenChange}
+              onCopy={handleMessageCopy}
+              onSuggestionClick={handleSuggestionClick}
+              onOpenMemorySources={handleOpenMemorySources}
+            />
           )}
         </ConversationContent>
 
