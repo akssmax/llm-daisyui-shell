@@ -34,16 +34,18 @@ vercel dev
 1. Terminal 1: `npm run dev:api` (requires `MISTRAL_API_KEY` in `.env.local` at the project root)
 2. Terminal 2: `npm run dev`
 
-Vite proxies `/api/*` → `http://localhost:3002`. The design editor calls `/api/design-chat`; that route is implemented in `dev-api-server.mjs` and `api/design-chat.ts` (Vercel).
+Vite proxies `/api/*` → `http://localhost:3002`. The design editor posts to **`/api/chat`** (same handler as main chat). `dev-api-server.mjs` also serves `/api/design-chat` as an alias for local parity.
 
 ## Deployment (Vercel)
 
 1. In Vercel Project Settings → Environment Variables, add:
-   - `MISTRAL_API_KEY` (required for `/api/chat` and **`/api/design-chat`**)
+   - `MISTRAL_API_KEY` (required for **`/api/chat`**, used by both main and design chat)
 2. Deploy normally.
-3. Serverless routes: `api/chat.ts` and `api/design-chat.ts` (same handler; design mode uses the latter).
+3. Serverless: `api/chat.ts` serves design mode and main chat. Optional `api/design-chat.ts` re-exports the same handler.
 
 **If design chat returns `FUNCTION_INVOCATION_FAILED` or 500:** the function is usually hitting the **serverless time limit** while streaming a large response. This repo sets `maxDuration: 60` for both chat routes in [`vercel.json`](vercel.json) (effective on Pro and above; Hobby stays at 10s). Design requests use a **4096** output token cap to finish sooner. You can optionally set **`VERCEL_CHAT_TIMEOUT_MS`** (e.g. `9000` on Hobby) so the upstream Mistral request aborts before the platform hard-kills the function—prefer upgrading plan or shorter prompts if issues persist.
+
+**Large canvases with embedded images:** the design system prompt **replaces image `data:` URLs with short placeholders** before calling the API so request bodies stay within Vercel limits (multi‑MB base64 in JSON was a common cause of design-only failures while normal chat still worked).
 
 ## Mistral chat behavior in v1
 

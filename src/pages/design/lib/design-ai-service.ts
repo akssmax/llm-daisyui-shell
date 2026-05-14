@@ -57,7 +57,9 @@ export async function sendDesignMessage(options: {
       temperature: 0.3,
       // Keep output budget modest so /api/design-chat finishes within Vercel maxDuration (streaming).
       maxTokens: 4096,
-      chatApiPath: "/api/design-chat",
+      // Same handler as main chat; avoids a separate serverless entry that can fail to bundle.
+      // Large design payloads (esp. image data URLs) are stripped in buildDesignSystemPrompt.
+      chatApiPath: "/api/chat",
       onToken: (token) => {
         buffer += token
         onToken(token)

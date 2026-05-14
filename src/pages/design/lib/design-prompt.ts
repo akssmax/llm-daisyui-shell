@@ -1,8 +1,34 @@
 import type { DesignDocument } from "../types"
 
+/** Max chars for embedded document JSON (Vercel serverless request size + memory). */
+const MAX_DOCUMENT_CONTEXT_CHARS = 450_000
+
+/**
+ * Strip huge data URLs from images before sending the document to the API.
+ * Embedded photos can be multi‑MB each; including them in JSON blows past
+ * Vercel limits and causes FUNCTION_INVOCATION_FAILED while normal chat still works.
+ */
+export function sanitizeDocumentForLlmContext(doc: DesignDocument): DesignDocument {
+  const clone = JSON.parse(JSON.stringify(doc)) as DesignDocument
+  for (const page of clone.pages) {
+    for (const el of page.elements) {
+      if (el.kind === "image" && typeof el.src === "string" && el.src.startsWith("data:")) {
+        const kb = Math.max(1, Math.round(el.src.length / 1024))
+        el.src = `[data URL omitted in LLM context ~${kb}KB, element ${el.id}]`
+      }
+    }
+  }
+  return clone
+}
+
 /** Full design-mode system prompt rules + current document snapshot. */
 export function buildDesignSystemPrompt(document: DesignDocument | null): string {
-  const docContext = document ? JSON.stringify(document, null, 2) : "No document yet"
+  let docContext = document ? JSON.stringify(sanitizeDocumentForLlmContext(document)) : "No document yet"
+  if (docContext.length > MAX_DOCUMENT_CONTEXT_CHARS) {
+    docContext =
+      docContext.slice(0, MAX_DOCUMENT_CONTEXT_CHARS) +
+      "\n…[document JSON truncated for API size limit; use patches for further edits]"
+  }
 
   return `You are an expert design AI. You create and edit beautiful, polished visual design documents for social media, LinkedIn carousels, and presentations.
 
@@ -165,6 +191,6 @@ NEVER mix light text colors with a light background shape, or dark text with a d
 - For follow-up edits, always prefer patches over full document replacement.
 - First message with no document: always return a full "document" response.
 
-CURRENT DOCUMENT STATE:
+CURRENT DOCUMENT STATE (image data URLs are replaced with placeholders in this snapshot; the real pixels remain on the canvas):
 ${docContext}`
 }
