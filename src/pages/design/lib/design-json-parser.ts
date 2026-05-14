@@ -4,6 +4,9 @@ import type { DesignAiResponse, DesignDocument, PatchOp } from "../types"
 export const DESIGN_MODEL_PARSE_FAILED_MESSAGE =
   "Could not read the model's design reply (it must be one JSON object). Try again, or ask for a smaller change."
 
+export const DESIGN_MODEL_PARSE_TRUNCATED_MESSAGE =
+  "The design reply looks cut off before the JSON finished. Use Continue if offered, shorten the request, or try again."
+
 function isValidDocument(obj: unknown): obj is DesignDocument {
   if (!obj || typeof obj !== "object") return false
   const d = obj as Record<string, unknown>
@@ -32,37 +35,91 @@ function isValidPatches(arr: unknown): arr is PatchOp[] {
   )
 }
 
-function extractLargestObject(text: string): string | null {
+/**
+ * Top-level `{ ... }` spans where `{` / `}` inside JSON strings do not change depth.
+ * Fixes false failures when e.g. `"text":"Use } for emphasis"` or code samples appear in strings.
+ */
+function extractRootLevelJsonObjects(s: string): string[] {
+  const objects: string[] = []
   let depth = 0
   let start = -1
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === "{") {
+  let inString = false
+  let escape = false
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]!
+    if (escape) {
+      escape = false
+      continue
+    }
+    if (inString) {
+      if (c === "\\") escape = true
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') {
+      inString = true
+      continue
+    }
+    if (c === "{") {
       if (depth === 0) start = i
       depth++
-    } else if (text[i] === "}") {
+    } else if (c === "}") {
       depth--
-      if (depth === 0 && start !== -1) return text.slice(start, i + 1)
+      if (depth === 0 && start !== -1) {
+        objects.push(s.slice(start, i + 1))
+        start = -1
+      }
+    }
+  }
+  return objects
+}
+
+/** True if `{`/`}` depth never returns to zero (truncated stream or invalid). */
+function hasUnbalancedJsonBraces(s: string): boolean {
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]!
+    if (escape) {
+      escape = false
+      continue
+    }
+    if (inString) {
+      if (c === "\\") escape = true
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') {
+      inString = true
+      continue
+    }
+    if (c === "{") depth++
+    else if (c === "}") depth--
+  }
+  return depth !== 0
+}
+
+function tryParseDesignCandidate(t: string): DesignAiResponse | null {
+  const trimmed = t.trim()
+  if (!trimmed) return null
+  try {
+    const direct = interpretParsedObject(JSON.parse(trimmed))
+    if (direct) return direct
+  } catch {
+    // not valid JSON as a whole — try root objects below
+  }
+  const roots = extractRootLevelJsonObjects(trimmed)
+  for (let i = roots.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(roots[i]!)
+      const result = interpretParsedObject(parsed)
+      if (result) return result
+    } catch {
+      continue
     }
   }
   return null
-}
-
-function parseJsonLoose(raw: string): unknown {
-  const t = raw.trim()
-  if (!t) return null
-  try {
-    return JSON.parse(t)
-  } catch {
-    const extracted = extractLargestObject(t)
-    if (extracted) {
-      try {
-        return JSON.parse(extracted)
-      } catch {
-        return null
-      }
-    }
-    return null
-  }
 }
 
 /** Strip thinking / reasoning wrappers (may wrap fenced JSON). */
@@ -70,6 +127,7 @@ function stripThinkingWrappers(s: string): string {
   return s
     .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "")
     .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "")
+    .replace(/<redacted[_\s-]*think(?:ing)?>[\s\S]*?<\/redacted[_\s-]*think(?:ing)?>/gi, "")
     .trim()
 }
 
@@ -119,7 +177,7 @@ export function collectDesignJsonCandidates(raw: string): string[] {
 }
 
 /**
- * @deprecated Prefer collectDesignJsonCandidates + parseJsonLoose; kept for tests / callers.
+ * @deprecated Prefer collectDesignJsonCandidates + tryParseDesignCandidate; kept for tests / callers.
  */
 export function normalizeRawDesignResponse(raw: string): string {
   const c = collectDesignJsonCandidates(raw)
@@ -173,9 +231,12 @@ function interpretParsedObject(obj: unknown): DesignAiResponse | null {
 export function extractJsonFromStream(raw: string): DesignAiResponse {
   const candidates = collectDesignJsonCandidates(raw)
   for (const c of candidates) {
-    const parsed = parseJsonLoose(c)
-    const result = interpretParsedObject(parsed)
+    const result = tryParseDesignCandidate(c)
     if (result) return result
+  }
+  const flat = raw.trim()
+  if (flat.length > 0 && hasUnbalancedJsonBraces(flat) && /"kind"\s*:/.test(flat)) {
+    return { kind: "message", text: DESIGN_MODEL_PARSE_TRUNCATED_MESSAGE }
   }
   return { kind: "message", text: DESIGN_MODEL_PARSE_FAILED_MESSAGE }
 }

@@ -106,4 +106,27 @@ describe("extractJsonFromStream", () => {
     const raw = `I'll output JSON now:\n\`\`\`json\n${inner}\n\`\`\`\nDone.`
     expect(extractJsonFromStream(raw)).toEqual({ kind: "message", text: "y" })
   })
+
+  it("parses design JSON after prose when the payload has } inside string values", () => {
+    const inner = JSON.stringify({ kind: "message", text: "Use } and { in copy", assistantNote: "ok }" })
+    const raw = `Here is the answer:\n${inner}`
+    expect(extractJsonFromStream(raw)).toEqual({
+      kind: "message",
+      text: "Use } and { in copy",
+      assistantNote: "ok }",
+    })
+  })
+
+  it("prefers the last root-level JSON object when earlier JSON is not a design reply", () => {
+    const good = JSON.stringify({ kind: "message", text: "final" })
+    const raw = `{ "not": "design", "x": 1 } junk ${good}`
+    expect(extractJsonFromStream(raw)).toEqual({ kind: "message", text: "final" })
+  })
+
+  it("detects truncated JSON and returns a cut-off hint", () => {
+    const raw = '{"kind":"document","document":{'
+    const r = extractJsonFromStream(raw)
+    expect(r.kind).toBe("message")
+    if (r.kind === "message") expect(r.text).toContain("cut off")
+  })
 })
