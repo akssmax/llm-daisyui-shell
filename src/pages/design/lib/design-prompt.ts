@@ -34,6 +34,8 @@ export function buildDesignSystemPrompt(document: DesignDocument | null): string
 
 ALWAYS respond with ONLY a valid JSON object — no markdown fences, no prose outside the JSON — matching one of these shapes:
 
+The API uses Mistral JSON mode for this chat: your entire reply must be exactly one JSON object (no surrounding markdown or commentary).
+
 1. Replace entire document (first request or major redesign):
 {"kind":"document","document":<DesignDocument>,"assistantNote":"<optional: 2–5 sentences for the user>"}
 

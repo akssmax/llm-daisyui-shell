@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { nanoid } from "nanoid"
 import type { FileUIPart } from "ai"
-import { AlertCircle, Brain, Plus, Sparkles } from "lucide-react"
+import { AlertCircle, Brain, Check, Copy, Plus, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import {
   Attachment,
@@ -17,7 +17,14 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation"
-import { Message, MessageContent } from "@/components/ai-elements/message"
+import { Message, MessageAction, MessageActions, MessageContent } from "@/components/ai-elements/message"
+import {
+  InlineCitation,
+  InlineCitationCard,
+  InlineCitationCardBody,
+  InlineCitationCardTrigger,
+  InlineCitationSource,
+} from "@/components/ai-elements/inline-citation"
 import { CollapsibleContent } from "@/components/ui/collapsible"
 import { Reasoning, ReasoningTrigger } from "@/components/ai-elements/reasoning"
 import {
@@ -49,9 +56,10 @@ import type { MistralModel } from "@/lib/llm-types"
 import type { StreamChatResult } from "@/lib/llm-service"
 import { useDesignStore } from "./store/design-store"
 import type { DesignAiResponse } from "./types"
-import { sendDesignMessage, type DesignChatMessage } from "./lib/design-ai-service"
+import { sendDesignMessage, type DesignChatMessage, type DesignAssistantStreamMeta } from "./lib/design-ai-service"
 import { pickRandomStarterPrompts } from "./lib/design-starter-prompts"
 import { LayersPanel } from "./components/layers/layers-panel"
+import { DESIGN_MODEL_PARSE_TRUNCATED_MESSAGE } from "./lib/design-json-parser"
 
 const CONTINUE_RESPONSE_PROMPT =
   "Continue from where you left off and complete the previous answer."
@@ -104,6 +112,7 @@ export function DesignChatPanel() {
   } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const skipInitialChatResetEffect = useRef(true)
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
 
   const { setDocument, applyPatches, isAiLoading, setAiLoading, designChatModel, setDesignChatModel, designChatThreadNonce } =
     useDesignStore(
@@ -142,6 +151,17 @@ export function DesignChatPanel() {
       setStarterSuggestions(pickRandomStarterPrompts())
     }
   }, [messages.length])
+
+  const handleCopyMessage = useCallback(async (messageId: string, text: string) => {
+    if (!text.trim()) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedMessageId(messageId)
+      window.setTimeout(() => setCopiedMessageId(null), 2000)
+    } catch {
+      // ignore
+    }
+  }, [])
 
   const send = useCallback(
     async (text: string, files: FileUIPart[] = []) => {
@@ -192,7 +212,7 @@ export function DesignChatPanel() {
             return next.length > MAX_TRACE_CHARS ? next.slice(-MAX_TRACE_CHARS) : next
           })
         },
-        onComplete: (parsed) => {
+        onComplete: (parsed, streamMeta: DesignAssistantStreamMeta) => {
           setAiLoading(false)
           setChatStatus("ready")
           if (parsed.kind === "document") {
@@ -202,8 +222,24 @@ export function DesignChatPanel() {
           }
           const content = displayAssistantContent(parsed)
           setMessages((prev) =>
-            prev.map((m) => (m.id === assistantId ? { ...m, content, isStreaming: false } : m)),
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content,
+                    isStreaming: false,
+                    sources: streamMeta.sources.length > 0 ? streamMeta.sources : undefined,
+                    citations: streamMeta.citations.length > 0 ? streamMeta.citations : undefined,
+                  }
+                : m,
+            ),
           )
+          if (parsed.kind === "message" && parsed.text === DESIGN_MODEL_PARSE_TRUNCATED_MESSAGE) {
+            setCompletionNotice({
+              message: parsed.text,
+              actionPrompt: CONTINUE_RESPONSE_PROMPT,
+            })
+          }
         },
         onError: (errMsg) => {
           setAiLoading(false)
@@ -272,7 +308,9 @@ export function DesignChatPanel() {
             <div className="flex flex-col gap-3">
               {messages.map((msg) => (
                 <Message key={msg.id} from={msg.role}>
-                  {msg.isStreaming ? (
+                  {msg.role === "user" ? (
+                    <MessageContent>{msg.content}</MessageContent>
+                  ) : msg.isStreaming ? (
                     <Reasoning isStreaming>
                       <ReasoningTrigger />
                       <CollapsibleContent
@@ -296,7 +334,68 @@ export function DesignChatPanel() {
                       <span className="text-xs">{msg.error}</span>
                     </MessageContent>
                   ) : (
-                    <MessageContent>{msg.content}</MessageContent>
+                    <div className="space-y-2">
+                      <MessageContent>{msg.content}</MessageContent>
+                      {((msg.citations?.length ?? 0) > 0 || (msg.sources?.length ?? 0) > 0) ? (
+                        <InlineCitation>
+                          {(msg.citations ?? []).map((c) => (
+                            <InlineCitationCard key={`cit-${c.href}`}>
+                              <InlineCitationCardTrigger sources={[c.href]} />
+                              <InlineCitationCardBody>
+                                <InlineCitationSource
+                                  title={c.label}
+                                  url={c.href}
+                                  description="Citation"
+                                />
+                              </InlineCitationCardBody>
+                            </InlineCitationCard>
+                          ))}
+                          {(msg.sources ?? []).map((s) => (
+                            <InlineCitationCard key={`src-${s.href}`}>
+                              <InlineCitationCardTrigger sources={[s.href]} />
+                              <InlineCitationCardBody>
+                                <InlineCitationSource
+                                  title={s.title}
+                                  url={s.href}
+                                  description="Source"
+                                />
+                              </InlineCitationCardBody>
+                            </InlineCitationCard>
+                          ))}
+                        </InlineCitation>
+                      ) : null}
+                      <MessageActions className="w-fit items-center gap-1 rounded-xl border border-border/70 bg-card/80 p-1 shadow-xs backdrop-blur supports-[backdrop-filter]:bg-card/65">
+                        <MessageAction
+                          tooltip="Copy message"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="rounded-lg text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                          onClick={() => void handleCopyMessage(msg.id, msg.content)}
+                        >
+                          {copiedMessageId === msg.id ? (
+                            <Check className="size-4" />
+                          ) : (
+                            <Copy className="size-4" />
+                          )}
+                        </MessageAction>
+                        <MessageAction
+                          tooltip="Helpful"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="rounded-lg text-muted-foreground hover:bg-emerald-500/12 hover:text-emerald-600 dark:hover:text-emerald-400"
+                        >
+                          <ThumbsUp className="size-4" />
+                        </MessageAction>
+                        <MessageAction
+                          tooltip="Not helpful"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <ThumbsDown className="size-4" />
+                        </MessageAction>
+                      </MessageActions>
+                    </div>
                   )}
                 </Message>
               ))}

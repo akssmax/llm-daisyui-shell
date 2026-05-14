@@ -35,6 +35,8 @@ type ChatRequestBody = {
   memoryContext?: string
   retrievedContext?: string
   sessionSummary?: string
+  /** Forwarded to Mistral as `response_format` (design JSON requests only). */
+  responseFormat?: "json_object"
 }
 
 type CompletionStatus = "completed" | "max_tokens_reached"
@@ -256,11 +258,18 @@ function resolveTimeoutMs(maxTokens: number): number {
   // Time budget scales with output size; clamp to protect server runtime.
   const adaptive = DEFAULT_TIMEOUT_MS + Math.ceil(maxTokens * 25)
   let ms = clamp(adaptive, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
-  // Vercel kills the function at maxDuration (often 10s on Hobby, up to 60s+ on Pro).
+  // Vercel kills the function at maxDuration (10s Hobby; higher on paid tiers — see vercel.json).
   // Abort the upstream request before the platform hard-kills to avoid FUNCTION_INVOCATION_FAILED.
   if (process.env.VERCEL) {
-    const ceiling = Number(process.env.VERCEL_CHAT_TIMEOUT_MS) || 55_000
-    ms = Math.min(ms, ceiling)
+    const envCap = Number(process.env.VERCEL_CHAT_TIMEOUT_MS)
+    if (Number.isFinite(envCap) && envCap > 0) {
+      ms = Math.min(ms, envCap)
+    } else {
+      // Default: scale wall clock with output budget so design-size JSON is not cut off at a flat ~55s
+      // while still staying under typical maxDuration (see vercel.json).
+      const scaledCeiling = Math.min(115_000, 42_000 + Math.ceil(maxTokens * 8))
+      ms = Math.min(ms, scaledCeiling)
+    }
   }
   return ms
 }
@@ -326,6 +335,15 @@ function validateRequest(body: ChatRequestBody): { ok: true } | { ok: false; sta
         ok: false,
         status: 400,
       }
+    }
+  }
+
+  if (body.responseFormat !== undefined && body.responseFormat !== "json_object") {
+    return {
+      code: "invalid_response_format",
+      message: "responseFormat must be json_object or omitted.",
+      ok: false,
+      status: 400,
     }
   }
 
@@ -484,14 +502,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const timeoutMs = resolveTimeoutMs(resolvedMaxTokens)
     timeout = setTimeout(() => controller.abort("timeout"), timeoutMs)
     const mistralMessages = toMistralMessages(finalMessages, attachments)
+    const wantJsonObject = body.responseFormat === "json_object"
+    const mistralBase = {
+      max_tokens: resolvedMaxTokens,
+      messages: mistralMessages,
+      model: body.model,
+      stream: true,
+      temperature: body.temperature ?? 0.7,
+    }
 
-    const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    let response = await fetch("https://api.mistral.ai/v1/chat/completions", {
       body: JSON.stringify({
-        max_tokens: resolvedMaxTokens,
-        messages: mistralMessages,
-        model: body.model,
-        stream: true,
-        temperature: body.temperature ?? 0.7,
+        ...mistralBase,
+        ...(wantJsonObject ? { response_format: { type: "json_object" as const } } : {}),
       }),
       headers: {
         Authorization: `Bearer ${key}`,
@@ -501,13 +524,27 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       signal: controller.signal,
     })
 
+    if (!response.ok && wantJsonObject && response.status === 400) {
+      await response.text().catch(() => "")
+      console.warn("[api/chat] Mistral rejected response_format json_object; retrying without JSON mode.")
+      response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+        body: JSON.stringify(mistralBase),
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+        signal: controller.signal,
+      })
+    }
+
     if (!response.ok || !response.body) {
       const text = await response.text().catch(() => "")
       return jsonError(
         res,
         response.status || 502,
         "upstream_error",
-        text || "Mistral request failed."
+        text || "Mistral request failed.",
       )
     }
 

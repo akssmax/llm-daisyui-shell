@@ -70,7 +70,16 @@ async function handleChat(req, res) {
   let parsed
   try { parsed = JSON.parse(body) } catch { parsed = {} }
 
-  const { model, messages, temperature, maxTokens } = parsed
+  const { model, messages, temperature, maxTokens, responseFormat } = parsed
+
+  if (responseFormat !== undefined && responseFormat !== "json_object") {
+    res.writeHead(400, { "Content-Type": "application/json" })
+    return res.end(
+      JSON.stringify({
+        error: { code: "invalid_response_format", message: "responseFormat must be json_object or omitted." },
+      }),
+    )
+  }
 
   if (!model || !MISTRAL_MODELS.has(model)) {
     res.writeHead(400, { "Content-Type": "application/json" })
@@ -85,20 +94,39 @@ async function handleChat(req, res) {
     ? clamp(Math.floor(maxTokens), 256, MAX_TOKENS_CAP)
     : DEFAULT_MAX_TOKENS
 
-  const upstream = await fetch("https://api.mistral.ai/v1/chat/completions", {
+  const wantJsonObject = responseFormat === "json_object"
+  const mistralBase = {
+    model,
+    messages,
+    stream: true,
+    temperature: temperature ?? 0.7,
+    max_tokens: resolvedMaxTokens,
+  }
+
+  let upstream = await fetch("https://api.mistral.ai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${MISTRAL_API_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model,
-      messages,
-      stream: true,
-      temperature: temperature ?? 0.7,
-      max_tokens: resolvedMaxTokens,
+      ...mistralBase,
+      ...(wantJsonObject ? { response_format: { type: "json_object" } } : {}),
     }),
   })
+
+  if (!upstream.ok && wantJsonObject && upstream.status === 400) {
+    await upstream.text().catch(() => "")
+    console.warn("[dev-api-server] Mistral rejected response_format json_object; retrying without JSON mode.")
+    upstream = await fetch("https://api.mistral.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${MISTRAL_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(mistralBase),
+    })
+  }
 
   if (!upstream.ok || !upstream.body) {
     const text = await upstream.text().catch(() => "")

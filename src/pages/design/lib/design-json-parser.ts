@@ -1,3 +1,4 @@
+import { jsonrepair } from "jsonrepair"
 import type { DesignAiResponse, DesignDocument, PatchOp } from "../types"
 
 /** User-visible fallback when the model output is not valid design JSON (avoid Cursor-like generic copy). */
@@ -33,6 +34,31 @@ function isValidPatches(arr: unknown): arr is PatchOp[] {
   return arr.every(
     (op) => op && typeof op === "object" && typeof (op as Record<string, unknown>).op === "string",
   )
+}
+
+function parseJsonMaybeRepaired(raw: string): unknown | null {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    try {
+      return JSON.parse(jsonrepair(raw))
+    } catch {
+      return null
+    }
+  }
+}
+
+/** Normalize `Kind` / `KIND` → `kind` for model drift. */
+function normalizeKindKey(obj: unknown): unknown {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj
+  const r = obj as Record<string, unknown>
+  if (typeof r.kind === "string") return obj
+  const alt = r.Kind ?? r.KIND
+  if (typeof alt === "string") {
+    const { Kind: _K, KIND: _k2, ...rest } = r
+    return { ...rest, kind: alt.toLowerCase() }
+  }
+  return obj
 }
 
 /**
@@ -100,24 +126,39 @@ function hasUnbalancedJsonBraces(s: string): boolean {
   return depth !== 0
 }
 
+function debugParseFailure(raw: string): void {
+  if (!import.meta.env.DEV || import.meta.env.MODE === "test") return
+  const t = raw.trim()
+  let h = 0
+  const cap = Math.min(t.length, 8000)
+  for (let i = 0; i < cap; i++) h = (h * 31 + t.charCodeAt(i)) | 0
+  console.warn("[design-json-parser] parse failed", { length: t.length, sampleHash: h })
+}
+
 function tryParseDesignCandidate(t: string): DesignAiResponse | null {
   const trimmed = t.trim()
   if (!trimmed) return null
-  try {
-    const direct = interpretParsedObject(JSON.parse(trimmed))
-    if (direct) return direct
-  } catch {
-    // not valid JSON as a whole — try root objects below
+
+  if (trimmed.startsWith("[")) {
+    const arr = parseJsonMaybeRepaired(trimmed)
+    if (arr !== null) {
+      const r = interpretParsedObject(arr)
+      if (r) return r
+    }
   }
+
+  const directParsed = parseJsonMaybeRepaired(trimmed)
+  if (directParsed !== null) {
+    const r = interpretParsedObject(normalizeKindKey(directParsed))
+    if (r) return r
+  }
+
   const roots = extractRootLevelJsonObjects(trimmed)
   for (let i = roots.length - 1; i >= 0; i--) {
-    try {
-      const parsed = JSON.parse(roots[i]!)
-      const result = interpretParsedObject(parsed)
-      if (result) return result
-    } catch {
-      continue
-    }
+    const parsed = parseJsonMaybeRepaired(roots[i]!)
+    if (parsed === null) continue
+    const result = interpretParsedObject(normalizeKindKey(parsed))
+    if (result) return result
   }
   return null
 }
@@ -185,6 +226,9 @@ export function normalizeRawDesignResponse(raw: string): string {
 }
 
 function interpretParsedObject(obj: unknown): DesignAiResponse | null {
+  if (Array.isArray(obj) && isValidPatches(obj)) {
+    return { kind: "patches", patches: obj }
+  }
   if (!obj || typeof obj !== "object") return null
   const response = obj as Record<string, unknown>
 
@@ -235,8 +279,9 @@ export function extractJsonFromStream(raw: string): DesignAiResponse {
     if (result) return result
   }
   const flat = raw.trim()
-  if (flat.length > 0 && hasUnbalancedJsonBraces(flat) && /"kind"\s*:/.test(flat)) {
+  if (flat.length > 0 && hasUnbalancedJsonBraces(flat) && /"kind"\s*:|"Kind"\s*:/i.test(flat)) {
     return { kind: "message", text: DESIGN_MODEL_PARSE_TRUNCATED_MESSAGE }
   }
+  debugParseFailure(raw)
   return { kind: "message", text: DESIGN_MODEL_PARSE_FAILED_MESSAGE }
 }

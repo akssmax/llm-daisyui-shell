@@ -43,7 +43,9 @@ Vite proxies `/api/*` → `http://localhost:3002`. The design editor posts to **
 2. Deploy normally.
 3. Serverless: `api/chat.ts` serves design mode and main chat. Optional `api/design-chat.ts` re-exports the same handler.
 
-**If design chat returns `FUNCTION_INVOCATION_FAILED` or 500:** the function is usually hitting the **serverless time limit** while streaming a large response. This repo sets `maxDuration: 60` for both chat routes in [`vercel.json`](vercel.json) (effective on Pro and above; Hobby stays at 10s). Design requests use a **4096** output token cap to finish sooner. You can optionally set **`VERCEL_CHAT_TIMEOUT_MS`** (e.g. `9000` on Hobby) so the upstream Mistral request aborts before the platform hard-kills the function—prefer upgrading plan or shorter prompts if issues persist.
+**If design chat returns `FUNCTION_INVOCATION_FAILED` or 500:** the function is usually hitting the **serverless time limit** while streaming. This repo sets `maxDuration: 120` for chat routes in [`vercel.json`](vercel.json) on plans that allow it (**Hobby is still capped at 10s**). Design mode requests up to **12_000** output tokens (server cap in `api/chat.ts`); the upstream abort budget on Vercel scales with that unless you set **`VERCEL_CHAT_TIMEOUT_MS`** yourself (milliseconds, caps the Mistral stream wait).
+
+**Truncated JSON / “cut off” replies:** usually **output token limit** (`finish_reason: length`) or **wall-clock limit** on Hobby. Use **Continue** in the design panel when offered, ask for smaller edits, or upgrade the Vercel plan so `maxDuration` applies beyond 10s.
 
 **Large canvases with embedded images:** the design system prompt **replaces image `data:` URLs with short placeholders** before calling the API so request bodies stay within Vercel limits (multi‑MB base64 in JSON was a common cause of design-only failures while normal chat still worked).
 

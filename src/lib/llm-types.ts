@@ -29,5 +29,7 @@ export interface LlmChatRequest {
   memoryContext?: string
   retrievedContext?: string
   sessionSummary?: string
+  /** When set, `/api/chat` forwards Mistral `response_format` (design JSON only). */
+  responseFormat?: "json_object"
 }
 

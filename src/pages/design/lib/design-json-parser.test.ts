@@ -129,4 +129,26 @@ describe("extractJsonFromStream", () => {
     expect(r.kind).toBe("message")
     if (r.kind === "message") expect(r.text).toContain("cut off")
   })
+
+  it("parses top-level patch array", () => {
+    const raw = JSON.stringify([{ op: "delete_element", pageId: "page1", elementId: "x" }])
+    const r = extractJsonFromStream(raw)
+    expect(r.kind).toBe("patches")
+    if (r.kind === "patches") expect(r.patches).toHaveLength(1)
+  })
+
+  it("normalizes Kind casing to kind", () => {
+    const raw = JSON.stringify({
+      Kind: "patches",
+      patches: [{ op: "delete_element", pageId: "page1", elementId: "x" }],
+    })
+    const r = extractJsonFromStream(raw)
+    expect(r.kind).toBe("patches")
+  })
+
+  it("repairs trailing comma via jsonrepair", () => {
+    const raw = '{"kind":"message","text":"hi",}'
+    const r = extractJsonFromStream(raw)
+    expect(r).toEqual({ kind: "message", text: "hi" })
+  })
 })
