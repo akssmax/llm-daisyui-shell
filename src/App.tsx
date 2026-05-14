@@ -5,11 +5,13 @@ import {
   MoreHorizontal,
   FileText,
   Database,
+  Layers2,
   MessageCircle,
   MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
+  PenLine,
   SlidersHorizontal,
   Table2,
   Trash2,
@@ -90,6 +92,15 @@ import {
   updateChatThread,
 } from "@/lib/chat-threads"
 import {
+  createDesignSession,
+  loadDesignSessions,
+  saveDesignSessions,
+  updateDesignSession,
+  type DesignSession,
+} from "@/lib/design-sessions"
+import { useDesignStore } from "@/pages/design/store/design-store"
+import type { DesignDocument } from "@/pages/design/types"
+import {
   buildMemoryContext,
   clearUserMemory,
   loadUserMemory,
@@ -108,6 +119,7 @@ import {
 } from "@/lib/rag-memory"
 import { getThreadIdFromUrl, onThreadUrlChange, setThreadIdInUrl } from "@/lib/thread-url"
 import { PlaygroundPage } from "@/pages/playground/playground-page"
+import { DesignPage } from "@/pages/design/design-page"
 
 type PageKey =
   | "new-chat"
@@ -116,6 +128,7 @@ type PageKey =
   | "smart-tables"
   | "routines"
   | "playground"
+  | "design"
 type IconType = React.ComponentType<{ className?: string }>
 
 const workspaceItems: Array<{ label: string; key: PageKey; icon: IconType }> = [
@@ -125,6 +138,7 @@ const workspaceItems: Array<{ label: string; key: PageKey; icon: IconType }> = [
   { label: "Smart Tables", key: "smart-tables", icon: Table2 },
   { label: "Routines", key: "routines", icon: Workflow },
   { label: "Playground", key: "playground", icon: SlidersHorizontal },
+  { label: "Design", key: "design", icon: Layers2 },
 ]
 
 function SidebarCollapseButton() {
@@ -648,6 +662,10 @@ export function App() {
   const [activePage, setActivePage] = useState<PageKey>("new-chat")
   const [threads, setThreads] = useState<ChatThread[]>([])
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+  const [designSessions, setDesignSessions] = useState<DesignSession[]>(() => loadDesignSessions())
+  const [activeDesignSessionId, setActiveDesignSessionId] = useState<string | null>(null)
+  const setDesignDocument = useDesignStore((s) => s.setDocument)
+  const currentDesignDoc = useDesignStore((s) => s.document)
   const [userMemory, setUserMemory] = useState<UserMemory>(() => loadUserMemory())
   const handleSaveGlobalMemory = useCallback((nextPartial: Partial<UserMemory>) => {
     setUserMemory((current) => saveUserMemory({ ...current, ...nextPartial }))
@@ -700,6 +718,13 @@ export function App() {
   }, [threads])
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      saveDesignSessions(designSessions)
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [designSessions])
+
+  useEffect(() => {
     const flushThreads = () => {
       saveChatThreads(threadsRef.current)
     }
@@ -744,6 +769,58 @@ export function App() {
     setThreadIdInUrl(newThread.threadId)
     setActivePage("new-chat")
   }, [])
+
+  const createAndSelectDesignSession = useCallback(() => {
+    // Save current doc back to the active session before clearing
+    if (activeDesignSessionId && currentDesignDoc) {
+      setDesignSessions((prev) =>
+        updateDesignSession(prev, activeDesignSessionId, () => ({ document: currentDesignDoc })),
+      )
+    }
+    const session = createDesignSession()
+    setDesignSessions((prev) => [session, ...prev])
+    setActiveDesignSessionId(session.id)
+    // Reset design store to blank state
+    useDesignStore.setState({ document: null, activePageId: null, selection: { elementIds: [], pageId: null }, past: [], future: [] })
+    useDesignStore.getState().resetDesignChatThread()
+    setActivePage("design")
+  }, [activeDesignSessionId, currentDesignDoc])
+
+  const selectDesignSession = useCallback(
+    (id: string) => {
+      if (id === activeDesignSessionId && activePage === "design") return
+      // Save current doc to current session before switching
+      if (activeDesignSessionId && currentDesignDoc) {
+        setDesignSessions((prev) =>
+          updateDesignSession(prev, activeDesignSessionId, () => ({ document: currentDesignDoc })),
+        )
+      }
+      const session = designSessions.find((s) => s.id === id)
+      if (!session) return
+      setActiveDesignSessionId(id)
+      if (session.document) {
+        setDesignDocument(session.document)
+      } else {
+        useDesignStore.setState({ document: null, activePageId: null, selection: { elementIds: [], pageId: null }, past: [], future: [] })
+      }
+      useDesignStore.getState().resetDesignChatThread()
+      setActivePage("design")
+    },
+    [activeDesignSessionId, activePage, currentDesignDoc, designSessions, setDesignDocument],
+  )
+
+  const handleDesignDocumentChange = useCallback(
+    (doc: DesignDocument) => {
+      if (!activeDesignSessionId) return
+      setDesignSessions((prev) =>
+        updateDesignSession(prev, activeDesignSessionId, () => ({
+          title: doc.title,
+          document: doc,
+        })),
+      )
+    },
+    [activeDesignSessionId],
+  )
 
   const selectThread = useCallback((threadId: string) => {
     setActiveThreadId(threadId)
@@ -844,6 +921,10 @@ export function App() {
                           createAndSelectThread()
                           return
                         }
+                        if (item.key === "design") {
+                          createAndSelectDesignSession()
+                          return
+                        }
                         setActivePage(item.key)
                       }}
                     >
@@ -860,6 +941,7 @@ export function App() {
             <SidebarGroupLabel>Recents</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
+                {/* Chat threads */}
                 {threads.map((thread) => (
                   <SidebarMenuItem key={thread.threadId} className="group/menu-item relative">
                     <SidebarMenuButton
@@ -914,6 +996,44 @@ export function App() {
                         <DropdownMenuItem
                           variant="destructive"
                           onSelect={() => setThreadToDelete(thread)}
+                        >
+                          <Trash2 className="size-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </SidebarMenuItem>
+                ))}
+                {/* Design sessions */}
+                {designSessions.map((session) => (
+                  <SidebarMenuItem key={session.id} className="group/menu-item relative">
+                    <SidebarMenuButton
+                      isActive={activePage === "design" && activeDesignSessionId === session.id}
+                      tooltip={session.title}
+                      onClick={() => selectDesignSession(session.id)}
+                      className="pr-9"
+                    >
+                      <PenLine />
+                      <span>{session.title}</span>
+                    </SidebarMenuButton>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="absolute top-1/2 right-1 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/menu-item:opacity-100 data-[state=open]:opacity-100"
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label="Design actions"
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onSelect={() =>
+                            setDesignSessions((prev) => prev.filter((s) => s.id !== session.id))
+                          }
                         >
                           <Trash2 className="size-4" />
                           Delete
@@ -1012,6 +1132,9 @@ export function App() {
             </StandardPageShell>
           )}
           {activePage === "playground" && <PlaygroundPage />}
+          {activePage === "design" && (
+            <DesignPage onDocumentChange={handleDesignDocumentChange} />
+          )}
         </main>
       </SidebarInset>
       <AlertDialog

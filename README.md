@@ -20,12 +20,21 @@ MISTRAL_API_KEY=...
 
 ## Local development
 
-- Frontend only (no API): `npm run dev`
-- Full stack with `/api/chat` route: run with Vercel dev so serverless functions are available:
+- Frontend only (no API): `npm run dev` (Vite on port **3001**)
+- Full stack with `/api/chat` and **`/api/design-chat`** (same handler as chat):
+
+**Option A — Vercel dev** (runs Vite + serverless `api/*`):
 
 ```bash
 vercel dev
 ```
+
+**Option B — Vite + local Node API** (what `vite.config.ts` proxies to on port **3002**):
+
+1. Terminal 1: `npm run dev:api` (requires `MISTRAL_API_KEY` in `.env.local` at the project root)
+2. Terminal 2: `npm run dev`
+
+Vite proxies `/api/*` → `http://localhost:3002`. The design editor calls `/api/design-chat`; that route is implemented in `dev-api-server.mjs` and `api/design-chat.ts` (Vercel).
 
 ## Deployment (Vercel)
 

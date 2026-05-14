@@ -24,6 +24,8 @@ export interface StreamChatOptions extends LlmChatRequest {
   onCitations?: (citations: Citation[]) => void
   onComplete?: (result: StreamChatResult) => void
   signal?: AbortSignal
+  /** Defaults to `/api/chat`. Design mode uses `/api/design-chat`. */
+  chatApiPath?: string
 }
 
 const RETRY_DELAY_MS = 500
@@ -196,12 +198,13 @@ async function requestChat(
   payload: LlmChatRequest,
   signal: AbortSignal | undefined,
   onToken: (token: string) => void,
-  onSuggestions?: (suggestions: string[]) => void,
-  onReasoning?: (reasoning: ReasoningMeta) => void,
-  onSources?: (sources: MockSource[]) => void,
-  onCitations?: (citations: Citation[]) => void
+  onSuggestions: ((suggestions: string[]) => void) | undefined,
+  onReasoning: ((reasoning: ReasoningMeta) => void) | undefined,
+  onSources: ((sources: MockSource[]) => void) | undefined,
+  onCitations: ((citations: Citation[]) => void) | undefined,
+  chatApiPath: string,
 ): Promise<StreamChatResult> {
-  const response = await fetch("/api/chat", {
+  let response = await fetch(chatApiPath, {
     body: JSON.stringify(payload),
     headers: {
       "Content-Type": "application/json",
@@ -210,11 +213,24 @@ async function requestChat(
     signal,
   })
 
+  // Design mode uses /api/design-chat when deployed; many local setups only expose /api/chat.
+  if (response.status === 404 && chatApiPath === "/api/design-chat") {
+    await response.text().catch(() => "")
+    response = await fetch("/api/chat", {
+      body: JSON.stringify(payload),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+      signal,
+    })
+  }
+
   if (!response.ok) {
     const errorText = await response.text().catch(() => "")
     if (response.status === 404) {
       throw new Error(
-        "API route /api/chat not found. Run the app with `vercel dev` so serverless functions are available."
+        `API route not found (${chatApiPath === "/api/design-chat" ? "tried /api/design-chat then /api/chat" : chatApiPath}). For local Vite dev, run \`npm run dev:api\` in a second terminal (from chat-shell, port 3002) or use \`vercel dev\` so serverless functions in /api are available.`,
       )
     }
     throw new Error(
@@ -252,11 +268,21 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamChat
     onCitations,
     onComplete,
     signal,
+    chatApiPath = "/api/chat",
     ...payload
   } = options
 
   try {
-    const result = await requestChat(payload, signal, onToken, onSuggestions, onReasoning, onSources, onCitations)
+    const result = await requestChat(
+      payload,
+      signal,
+      onToken,
+      onSuggestions,
+      onReasoning,
+      onSources,
+      onCitations,
+      chatApiPath,
+    )
     onComplete?.(result)
     return result
   } catch (error) {
@@ -269,7 +295,16 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamChat
     if (!shouldRetry) throw error
 
     await sleep(RETRY_DELAY_MS)
-    const result = await requestChat(payload, signal, onToken, onSuggestions, onReasoning, onSources, onCitations)
+    const result = await requestChat(
+      payload,
+      signal,
+      onToken,
+      onSuggestions,
+      onReasoning,
+      onSources,
+      onCitations,
+      chatApiPath,
+    )
     onComplete?.(result)
     return result
   }

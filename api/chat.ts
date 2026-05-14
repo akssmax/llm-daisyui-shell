@@ -185,6 +185,27 @@ async function generateSuggestionsWithBudget(
   ])
 }
 
+/** Short context for follow-up chips when the stream is design JSON, not chat prose. */
+function assistantTextForSuggestions(assistantText: string, lastUserMessage: string): string {
+  const t = assistantText.trim()
+  if (!t) return t
+  try {
+    const obj = JSON.parse(t) as Record<string, unknown>
+    const kind = obj.kind
+    if (kind === "document" || kind === "patches") {
+      const note = typeof obj.assistantNote === "string" ? obj.assistantNote.trim() : ""
+      if (note.length > 0) return note.length > 1200 ? note.slice(0, 1200) : note
+      return `Assistant returned a structured design update (kind: ${String(kind)}). User request: ${lastUserMessage}`
+    }
+  } catch {
+    // not valid JSON
+  }
+  if (t.startsWith("{") && t.length > 8000) {
+    return `Assistant returned a large structured response (likely a design document). User request: ${lastUserMessage}`
+  }
+  return t
+}
+
 function jsonError(res: ApiResponse, status: number, code: string, message: string) {
   res.status(status).json({ error: { code, message } })
 }
@@ -192,6 +213,23 @@ function jsonError(res: ApiResponse, status: number, code: string, message: stri
 function writeSse(res: ApiResponse, event: string, data: unknown) {
   res.write(`event: ${event}\n`)
   res.write(`data: ${JSON.stringify(data)}\n\n`)
+}
+
+/** Mistral may stream `delta.content` as a string or as `[{ type, text }, ...]`. */
+function mistralDeltaToText(content: unknown): string {
+  if (typeof content === "string") return content
+  if (!Array.isArray(content)) return ""
+  let out = ""
+  for (const part of content) {
+    if (typeof part === "string") {
+      out += part
+      continue
+    }
+    if (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string") {
+      out += (part as { text: string }).text
+    }
+  }
+  return out
 }
 
 function estimateTokens(messages: ChatMessageInput[]): number {
@@ -486,19 +524,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         try {
           const payload = JSON.parse(data)
           const choice = payload?.choices?.[0]
-          const tokenFromDelta = choice?.delta?.content
-          const tokenFromMessage = choice?.message?.content
           if (typeof choice?.finish_reason === "string" && choice.finish_reason.trim().length > 0) {
             finishReason = choice.finish_reason
           }
           const token =
-            typeof tokenFromDelta === "string" && tokenFromDelta.length > 0
-              ? tokenFromDelta
-              : typeof tokenFromMessage === "string" && tokenFromMessage.length > 0
-                ? tokenFromMessage
-                : null
+            mistralDeltaToText(choice?.delta?.content) ||
+            mistralDeltaToText(choice?.message?.content)
 
-          if (token) {
+          if (token.length > 0) {
             assistantText += token
             writeSse(res, "token", { text: token })
           }
@@ -532,11 +565,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     try {
       const lastUserMessage =
         [...messages].reverse().find((message) => message.role === "user")?.content ?? ""
+      const assistantForSuggestions = assistantTextForSuggestions(assistantText, lastUserMessage)
       const suggestions = await generateSuggestionsWithBudget(
         key,
         body.model || SUMMARY_MODEL,
         lastUserMessage,
-        assistantText,
+        assistantForSuggestions,
         controller.signal
       )
       if (suggestions.length > 0) {
