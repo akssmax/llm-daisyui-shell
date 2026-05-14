@@ -182,6 +182,8 @@ function SidebarBrand() {
   )
 }
 
+/* Deferred: Smart Tables + Routines pages — uncomment types, sidebar items, imports (Table2, Workflow), and routes below when ready.
+
 function MetricsRow({ items }: { items: Array<{ label: string; value: string }> }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -197,7 +199,6 @@ function MetricsRow({ items }: { items: Array<{ label: string; value: string }> 
   )
 }
 
-/* Deferred: Smart Tables + Routines pages — uncomment types, sidebar items, imports (Table2, Workflow), and routes below when ready.
 function SmartTablesPage() {
   return (
     <div className="space-y-4">
