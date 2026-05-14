@@ -4,11 +4,16 @@ import { safePageElements } from "../lib/safe-page-elements"
 export function applyPatch(doc: DesignDocument, op: PatchOp): DesignDocument {
   switch (op.op) {
     case "create_element": {
+      // If the model used a wrong pageId (common with small models), fall back to
+      // the first page so the element is not silently lost.
+      const targetPageId = doc.pages.some((p) => p.id === op.pageId)
+        ? op.pageId
+        : (doc.pages[0]?.id ?? op.pageId)
       return {
         ...doc,
         updatedAt: new Date().toISOString(),
         pages: doc.pages.map((p) =>
-          p.id === op.pageId ? { ...p, elements: [...safePageElements(p), op.element] } : p,
+          p.id === targetPageId ? { ...p, elements: [...safePageElements(p), op.element] } : p,
         ),
       }
     }

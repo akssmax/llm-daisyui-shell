@@ -315,22 +315,73 @@ export async function runDesignAgentTurn(opts: RunDesignAgentTurnOptions): Promi
     }
   }
 
+  // If compose returned patches but there is no base document to apply them to,
+  // retry with the fallback prompt (which explicitly asks for kind:"document").
+  if (composed.kind === "patches" && !document) {
+    debugBundle.composeFallbackTriggered = true
+    const fbRaw = await run({
+      phaseId: "compose",
+      label: "Compose canvas (retry)",
+      systemPrompt: buildComposeFallbackPrompt(null, intentPlan, tokens),
+      userContent,
+      model,
+      maxTokens: 8_000,
+      signal: opts.signal,
+      onToken: opts.onToken,
+      onAgentPhase: opts.onAgentPhase,
+      onPhaseBuffer: opts.onPhaseBuffer,
+    })
+    debugBundle.composeFallbackRaw = fbRaw.raw
+    const fbResult = extractJsonFromStream(fbRaw.raw)
+    if (fbResult.kind !== "message") {
+      composed = fbResult
+    } else {
+      const err: DesignAgentPhaseTrace = { ...composeRaw.trace, state: "error", summary: "Patches without base document (fallback also failed)" }
+      if (phases.length > 0) phases[phases.length - 1] = err
+      opts.onPhaseComplete?.(err)
+      return {
+        response: { kind: "message", text: "Model returned patches but no document exists yet. Try again with a shorter brief." },
+        phases,
+        debugBundle,
+      }
+    }
+  }
+
   let workingDoc: DesignDocument | null = document
   if (composed.kind === "document") {
     workingDoc = composed.document
   } else if (composed.kind === "patches" && document) {
-    workingDoc = applyPatchesToDocument(document, composed.patches)
-  } else if (composed.kind === "patches" && !document) {
-    const err: DesignAgentPhaseTrace = { ...composeRaw.trace, state: "error", summary: "Patches without base document" }
-    if (phases.length > 0) phases[phases.length - 1] = err
-    opts.onPhaseComplete?.(err)
-    return {
-      response: {
-        kind: "message",
-        text: "Model returned patches but no document exists yet. Ask for a new design in one sentence.",
-      },
-      phases,
-      debugBundle,
+    const afterPatches = applyPatchesToDocument(document, composed.patches)
+    const totalElsAfter = afterPatches.pages.reduce((s, p) => s + (p.elements?.length ?? 0), 0)
+    const totalElsBefore = document.pages.reduce((s, p) => s + (p.elements?.length ?? 0), 0)
+    // If patches added nothing (all pageIds were wrong), fall back to a full-document compose.
+    if (totalElsAfter === totalElsBefore && !debugBundle.composeFallbackTriggered) {
+      debugBundle.composeFallbackTriggered = true
+      const fbRaw = await run({
+        phaseId: "compose",
+        label: "Compose canvas (retry)",
+        systemPrompt: buildComposeFallbackPrompt(document, intentPlan, tokens),
+        userContent,
+        model,
+        maxTokens: 8_000,
+        signal: opts.signal,
+        onToken: opts.onToken,
+        onAgentPhase: opts.onAgentPhase,
+        onPhaseBuffer: opts.onPhaseBuffer,
+      })
+      debugBundle.composeFallbackRaw = fbRaw.raw
+      const fbResult = extractJsonFromStream(fbRaw.raw)
+      if (fbResult.kind === "document") {
+        workingDoc = fbResult.document
+        composed = fbResult
+      } else if (fbResult.kind === "patches") {
+        workingDoc = applyPatchesToDocument(document, fbResult.patches)
+        composed = fbResult
+      } else {
+        workingDoc = afterPatches
+      }
+    } else {
+      workingDoc = afterPatches
     }
   }
 
