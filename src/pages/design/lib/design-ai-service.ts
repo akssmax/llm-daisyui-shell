@@ -55,7 +55,8 @@ export async function sendDesignMessage(options: {
       messages,
       ...(attachments && attachments.length > 0 ? { attachments } : {}),
       temperature: 0.3,
-      maxTokens: 8000,
+      // Keep output budget modest so /api/design-chat finishes within Vercel maxDuration (streaming).
+      maxTokens: 4096,
       chatApiPath: "/api/design-chat",
       onToken: (token) => {
         buffer += token

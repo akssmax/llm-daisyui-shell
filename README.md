@@ -38,10 +38,12 @@ Vite proxies `/api/*` → `http://localhost:3002`. The design editor calls `/api
 
 ## Deployment (Vercel)
 
-1. In Vercel Project Settings -> Environment Variables, add:
-   - `MISTRAL_API_KEY`
+1. In Vercel Project Settings → Environment Variables, add:
+   - `MISTRAL_API_KEY` (required for `/api/chat` and **`/api/design-chat`**)
 2. Deploy normally.
-3. The client calls `/api/chat`; Vercel runs `api/chat.ts` server-side and keeps the key hidden.
+3. Serverless routes: `api/chat.ts` and `api/design-chat.ts` (same handler; design mode uses the latter).
+
+**If design chat returns `FUNCTION_INVOCATION_FAILED` or 500:** the function is usually hitting the **serverless time limit** while streaming a large response. This repo sets `maxDuration: 60` for both chat routes in [`vercel.json`](vercel.json) (effective on Pro and above; Hobby stays at 10s). Design requests use a **4096** output token cap to finish sooner. You can optionally set **`VERCEL_CHAT_TIMEOUT_MS`** (e.g. `9000` on Hobby) so the upstream Mistral request aborts before the platform hard-kills the function—prefer upgrading plan or shorter prompts if issues persist.
 
 ## Mistral chat behavior in v1
 

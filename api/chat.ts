@@ -255,7 +255,14 @@ function resolveMaxTokens(requestedMaxTokens: number | undefined, messages: Chat
 function resolveTimeoutMs(maxTokens: number): number {
   // Time budget scales with output size; clamp to protect server runtime.
   const adaptive = DEFAULT_TIMEOUT_MS + Math.ceil(maxTokens * 25)
-  return clamp(adaptive, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
+  let ms = clamp(adaptive, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
+  // Vercel kills the function at maxDuration (often 10s on Hobby, up to 60s+ on Pro).
+  // Abort the upstream request before the platform hard-kills to avoid FUNCTION_INVOCATION_FAILED.
+  if (process.env.VERCEL) {
+    const ceiling = Number(process.env.VERCEL_CHAT_TIMEOUT_MS) || 55_000
+    ms = Math.min(ms, ceiling)
+  }
+  return ms
 }
 
 function getDataUrlBytes(url: string): number {
@@ -505,7 +512,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     res.setHeader("Cache-Control", "no-cache, no-transform")
-    res.setHeader("Connection", "keep-alive")
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8")
     res.setHeader("X-Accel-Buffering", "no")
 
