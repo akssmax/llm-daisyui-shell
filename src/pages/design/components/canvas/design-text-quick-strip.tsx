@@ -2,6 +2,7 @@ import { useShallow } from "zustand/react/shallow"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { DesignColorPicker } from "../properties/design-color-picker"
+import { DesignFontFamilyControl } from "../properties/design-font-family-control"
 import { useDesignStore } from "../../store/design-store"
 
 /** Minimal contextual controls when a text layer is selected (complements the properties sheet). */
@@ -20,7 +21,18 @@ export function DesignTextQuickStrip() {
   if (!el || el.kind !== "text" || !page) return null
 
   return (
-    <div className="flex max-w-[min(100%,480px)] flex-wrap items-center gap-2 rounded-md border border-border/80 bg-muted/30 px-2 py-1">
+    <div className="flex max-w-[min(100%,560px)] flex-wrap items-center gap-2 rounded-md border border-border/80 bg-muted/30 px-2 py-1">
+      <DesignFontFamilyControl
+        key={el.id}
+        compact
+        fontFamily={el.fontFamily}
+        onCommitStack={(stack) =>
+          applyPatches(
+            [{ op: "update_element", pageId: page.id, elementId: el.id, patch: { fontFamily: stack } }],
+            { clearSelection: false },
+          )
+        }
+      />
       <div className="flex items-center gap-1.5">
         <Label className="text-xs text-muted-foreground">Size</Label>
         <Input

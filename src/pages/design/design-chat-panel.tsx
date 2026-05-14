@@ -27,6 +27,10 @@ import {
 } from "@/components/ai-elements/inline-citation"
 import { CollapsibleContent } from "@/components/ui/collapsible"
 import { Reasoning, ReasoningTrigger } from "@/components/ai-elements/reasoning"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { DesignAgentChainOfThought } from "./components/design-agent-chain-of-thought"
+import type { DesignAgentPhaseTrace } from "./lib/design-agent-orchestrator"
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -113,6 +117,8 @@ export function DesignChatPanel() {
   const abortRef = useRef<AbortController | null>(null)
   const skipInitialChatResetEffect = useRef(true)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [agentLivePhases, setAgentLivePhases] = useState<DesignAgentPhaseTrace[]>([])
+  const [chainOpenByAssistant, setChainOpenByAssistant] = useState<Record<string, boolean>>({})
 
   const streamTraceFullRef = useRef("")
   const streamTraceRafRef = useRef<number | null>(null)
@@ -144,18 +150,29 @@ export function DesignChatPanel() {
     }
   }, [])
 
-  const { setDocument, applyPatches, isAiLoading, setAiLoading, designChatModel, setDesignChatModel, designChatThreadNonce } =
-    useDesignStore(
-      useShallow((s) => ({
-        setDocument: s.setDocument,
-        applyPatches: s.applyPatches,
-        isAiLoading: s.isAiLoading,
-        setAiLoading: s.setAiLoading,
-        designChatModel: s.designChatModel,
-        setDesignChatModel: s.setDesignChatModel,
-        designChatThreadNonce: s.designChatThreadNonce,
-      })),
-    )
+  const {
+    setDocument,
+    applyPatches,
+    isAiLoading,
+    setAiLoading,
+    designChatModel,
+    setDesignChatModel,
+    designChatThreadNonce,
+    designAgentPipelineEnabled,
+    setDesignAgentPipelineEnabled,
+  } = useDesignStore(
+    useShallow((s) => ({
+      setDocument: s.setDocument,
+      applyPatches: s.applyPatches,
+      isAiLoading: s.isAiLoading,
+      setAiLoading: s.setAiLoading,
+      designChatModel: s.designChatModel,
+      setDesignChatModel: s.setDesignChatModel,
+      designChatThreadNonce: s.designChatThreadNonce,
+      designAgentPipelineEnabled: s.designAgentPipelineEnabled,
+      setDesignAgentPipelineEnabled: s.setDesignAgentPipelineEnabled,
+    })),
+  )
 
   useEffect(() => {
     if (skipInitialChatResetEffect.current) {
@@ -177,6 +194,8 @@ export function DesignChatPanel() {
     setStarterSuggestions(pickRandomStarterPrompts())
     setAiLoading(false)
     prevMessageCountRef.current = 0
+    setAgentLivePhases([])
+    setChainOpenByAssistant({})
   }, [designChatThreadNonce, setAiLoading])
 
   useEffect(() => {
@@ -206,13 +225,21 @@ export function DesignChatPanel() {
 
       const displayText = text.trim() || (hasFiles ? "Sent with attachments" : "")
 
-      const userMsg: DesignChatMessage = { id: nanoid(), role: "user", content: displayText }
+      const agentForTurn = useDesignStore.getState().designAgentPipelineEnabled
+
+      const userMsg: DesignChatMessage = {
+        id: nanoid(),
+        role: "user",
+        content: displayText,
+        ...(hasFiles ? { attachments: files.map((f) => ({ ...f })) } : {}),
+      }
       const assistantId = nanoid()
       const assistantMsg: DesignChatMessage = {
         id: assistantId,
         role: "assistant",
         content: "",
         isStreaming: true,
+        agentPipelineForTurn: agentForTurn,
       }
 
       setMessages((prev) => [...prev, userMsg, assistantMsg])
@@ -226,6 +253,8 @@ export function DesignChatPanel() {
       setStreamTrace("")
       setFollowUpSuggestions([])
       setCompletionNotice(null)
+      setAgentLivePhases([])
+      setChainOpenByAssistant((prev) => ({ ...prev, [assistantId]: true }))
 
       abortRef.current = new AbortController()
 
@@ -234,6 +263,16 @@ export function DesignChatPanel() {
         history: messages,
         attachments: hasFiles ? files : undefined,
         signal: abortRef.current.signal,
+        agentPipelineForTurn: agentForTurn,
+        onDesignAgentPhase: (trace) => {
+          setAgentLivePhases((prev) => {
+            const j = prev.findIndex((p) => p.id === trace.id)
+            if (j === -1) return [...prev, trace]
+            const next = [...prev]
+            next[j] = trace
+            return next
+          })
+        },
         onSuggestions: (suggestions) => {
           setFollowUpSuggestions(suggestions)
         },
@@ -247,6 +286,7 @@ export function DesignChatPanel() {
           }
         },
         onToken: (token) => {
+          if (agentForTurn) return
           streamTraceFullRef.current += token
           scheduleStreamTraceFlush()
         },
@@ -269,10 +309,12 @@ export function DesignChatPanel() {
                     isStreaming: false,
                     sources: streamMeta.sources.length > 0 ? streamMeta.sources : undefined,
                     citations: streamMeta.citations.length > 0 ? streamMeta.citations : undefined,
+                    agentTrace: streamMeta.agentTrace,
                   }
                 : m,
             ),
           )
+          setAgentLivePhases([])
           if (parsed.kind === "message" && parsed.text === DESIGN_MODEL_PARSE_TRUNCATED_MESSAGE) {
             setCompletionNotice({
               message: parsed.text,
@@ -307,6 +349,7 @@ export function DesignChatPanel() {
     flushStreamTrace()
     setAiLoading(false)
     setChatStatus("ready")
+    setAgentLivePhases([])
     setMessages((prev) =>
       prev.map((m) =>
         m.isStreaming ? { ...m, isStreaming: false, content: m.content || "Stopped." } : m,
@@ -353,25 +396,50 @@ export function DesignChatPanel() {
               {messages.map((msg) => (
                 <Message key={msg.id} from={msg.role}>
                   {msg.role === "user" ? (
-                    <MessageContent>{msg.content}</MessageContent>
+                    <div className="space-y-2">
+                      <MessageContent>{msg.content}</MessageContent>
+                      {(msg.attachments?.length ?? 0) > 0 ? (
+                        <Attachments variant="inline" className="w-full flex-wrap justify-start">
+                          {msg.attachments!.map((file) => (
+                            <Attachment key={file.id} data={file} onRemove={() => {}}>
+                              <AttachmentPreview />
+                              <AttachmentInfo />
+                            </Attachment>
+                          ))}
+                        </Attachments>
+                      ) : null}
+                    </div>
                   ) : msg.isStreaming ? (
-                    <Reasoning isStreaming>
-                      <ReasoningTrigger />
-                      <CollapsibleContent
-                        className={cn(
-                          "mt-4 text-sm",
-                          "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
-                        )}
-                      >
-                        <p className="text-xs font-medium text-foreground">Streaming model output (JSON)</p>
-                        <pre
-                          className="mt-2 max-h-[min(50vh,480px)] overflow-auto rounded-md border border-border bg-muted/50 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words text-foreground"
-                          suppressHydrationWarning
+                    msg.agentPipelineForTurn ? (
+                      <DesignAgentChainOfThought
+                        assistantId={msg.id}
+                        phases={agentLivePhases}
+                        isStreaming
+                        chainOpen={chainOpenByAssistant[msg.id] ?? true}
+                        onOpenChange={(open) =>
+                          setChainOpenByAssistant((prev) => ({ ...prev, [msg.id]: open }))
+                        }
+                        streamTrace=""
+                      />
+                    ) : (
+                      <Reasoning isStreaming>
+                        <ReasoningTrigger />
+                        <CollapsibleContent
+                          className={cn(
+                            "mt-4 text-sm",
+                            "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+                          )}
                         >
-                          {streamTrace || "Waiting for first token…"}
-                        </pre>
-                      </CollapsibleContent>
-                    </Reasoning>
+                          <p className="text-xs font-medium text-foreground">Streaming model output (JSON)</p>
+                          <pre
+                            className="mt-2 max-h-[min(50vh,480px)] overflow-auto rounded-md border border-border bg-muted/50 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words text-foreground"
+                            suppressHydrationWarning
+                          >
+                            {streamTrace || "Waiting for first token…"}
+                          </pre>
+                        </CollapsibleContent>
+                      </Reasoning>
+                    )
                   ) : msg.error ? (
                     <MessageContent className="flex items-center gap-1.5 text-destructive">
                       <AlertCircle className="h-3.5 w-3.5 shrink-0" />
@@ -379,6 +447,18 @@ export function DesignChatPanel() {
                     </MessageContent>
                   ) : (
                     <div className="space-y-2">
+                      {(msg.agentTrace?.length ?? 0) > 0 ? (
+                        <DesignAgentChainOfThought
+                          assistantId={msg.id}
+                          phases={msg.agentTrace!}
+                          isStreaming={false}
+                          chainOpen={chainOpenByAssistant[msg.id] ?? false}
+                          onOpenChange={(open) =>
+                            setChainOpenByAssistant((prev) => ({ ...prev, [msg.id]: open }))
+                          }
+                          streamTrace=""
+                        />
+                      ) : null}
                       <MessageContent>{msg.content}</MessageContent>
                       {((msg.citations?.length ?? 0) > 0 || (msg.sources?.length ?? 0) > 0) ? (
                         <InlineCitation>
@@ -539,6 +619,17 @@ export function DesignChatPanel() {
                     ))}
                   </SelectContent>
                 </Select>
+                <div className="flex items-center gap-2 rounded-lg border border-border/80 bg-muted/20 px-2 py-1">
+                  <Switch
+                    id="design-agent-toggle"
+                    checked={designAgentPipelineEnabled}
+                    onCheckedChange={setDesignAgentPipelineEnabled}
+                    disabled={chatStatus === "streaming"}
+                  />
+                  <Label htmlFor="design-agent-toggle" className="cursor-pointer text-xs text-muted-foreground">
+                    Design agent
+                  </Label>
+                </div>
               </PromptInputTools>
               <PromptInputTools className="justify-end">
                 <PromptInputSubmit

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { applyPatch } from "../store/patch-reducer"
+import { applyPatch, applyPatchesToDocument } from "../store/patch-reducer"
 import type { DesignDocument, TextElement } from "../types"
 
 const textEl: TextElement = {
@@ -81,5 +81,25 @@ describe("applyPatch", () => {
       zIndex: 99,
     })
     expect(next.pages[0]?.elements[0]?.zIndex).toBe(99)
+  })
+
+  it("update_page merges backgroundColor", () => {
+    const next = applyPatch(baseDoc, {
+      op: "update_page",
+      pageId: "p1",
+      patch: { backgroundColor: "#0F172A" },
+    })
+    expect(next.pages[0]?.backgroundColor).toBe("#0F172A")
+    expect(next.pages[0]?.elements).toEqual(baseDoc.pages[0]?.elements)
+    expect(next.updatedAt).not.toBe(baseDoc.updatedAt)
+  })
+
+  it("applyPatchesToDocument chains ops", () => {
+    const next = applyPatchesToDocument(baseDoc, [
+      { op: "update_element", pageId: "p1", elementId: "t1", patch: { x: 8 } },
+      { op: "update_element", pageId: "p1", elementId: "t1", patch: { y: 16 } },
+    ])
+    expect((next.pages[0]?.elements[0] as TextElement).x).toBe(8)
+    expect((next.pages[0]?.elements[0] as TextElement).y).toBe(16)
   })
 })

@@ -2,8 +2,11 @@ import { useMemo } from "react"
 import { Layers } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { Label } from "@/components/ui/label"
 import { useDesignStore } from "../../store/design-store"
+import { safePageElements } from "../../lib/safe-page-elements"
 import { LayerRow } from "./layer-row"
+import { DesignColorPicker } from "../properties/design-color-picker"
 
 export function LayersPanel() {
   const { document, activePageId, selection, selectElements, applyPatches, setActiveTool } = useDesignStore(
@@ -21,7 +24,7 @@ export function LayersPanel() {
 
   const sorted = useMemo(() => {
     if (!page) return []
-    return [...page.elements].sort((a, b) => b.zIndex - a.zIndex)
+    return [...safePageElements(page)].sort((a, b) => b.zIndex - a.zIndex)
   }, [page])
 
   if (!page) return null
@@ -60,6 +63,23 @@ export function LayersPanel() {
         Layers ({sorted.length})
       </CollapsibleTrigger>
       <CollapsibleContent>
+        <div className="flex flex-col gap-2 border-b border-border/60 px-2 pb-2 pt-1">
+          <div className="flex items-center gap-2 px-0.5">
+            <Label className="w-14 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Frame
+            </Label>
+            <div className="min-w-0 flex-1">
+              <DesignColorPicker
+                value={page.backgroundColor}
+                onChange={(hex) =>
+                  applyPatches([{ op: "update_page", pageId, patch: { backgroundColor: hex } }], {
+                    clearSelection: false,
+                  })
+                }
+              />
+            </div>
+          </div>
+        </div>
         <div className="flex flex-col gap-0.5 px-2 pb-2">
           {sorted.length === 0 ? (
             <p className="px-2 py-3 text-center text-xs text-muted-foreground">No elements yet</p>

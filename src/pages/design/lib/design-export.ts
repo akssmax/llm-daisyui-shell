@@ -1,4 +1,6 @@
 import type { DesignDocument, DesignElement, DesignPage } from "../types"
+import { fontFamilyForHtmlCss, googleFontStylesheetHrefsForExport } from "./design-fonts"
+import { normalizeFontWeightToCssString } from "./design-text-style"
 
 // ─── HTML Export ────────────────────────────────────────────────────────────
 
@@ -6,7 +8,7 @@ function elementToHtml(el: DesignElement): string {
   const base = `position:absolute;left:${el.x}px;top:${el.y}px;width:${el.width}px;height:${el.height}px;z-index:${el.zIndex};opacity:${el.opacity};${el.rotation ? `transform:rotate(${el.rotation}deg);` : ""}`
 
   if (el.kind === "text") {
-    return `<div style="${base}font-family:${el.fontFamily};font-size:${el.fontSize}px;font-weight:${el.fontWeight};font-style:${el.fontStyle};color:${el.color};text-align:${el.textAlign};line-height:${el.lineHeight};background:${el.backgroundColor ?? "transparent"};border-radius:${el.borderRadius ?? 0}px;padding:4px 8px;box-sizing:border-box;word-break:break-word;white-space:pre-wrap;">${el.content.replace(/\n/g, "<br/>")}</div>`
+    return `<div style="${base}font-family:${fontFamilyForHtmlCss(el.fontFamily)};font-size:${el.fontSize}px;font-weight:${normalizeFontWeightToCssString(el.fontWeight)};font-style:${el.fontStyle};color:${el.color};text-align:${el.textAlign};line-height:${el.lineHeight};background:${el.backgroundColor ?? "transparent"};border-radius:${el.borderRadius ?? 0}px;padding:4px 8px;box-sizing:border-box;word-break:break-word;white-space:pre-wrap;">${el.content.replace(/\n/g, "<br/>")}</div>`
   }
 
   if (el.kind === "image") {
@@ -71,12 +73,16 @@ function pageToHtml(page: DesignPage): string {
 
 export function htmlExport(doc: DesignDocument): void {
   const body = doc.pages.map(pageToHtml).join("\n")
+  const fontLinks = googleFontStylesheetHrefsForExport(doc)
+    .map((href) => `<link rel="stylesheet" href="${href}" crossorigin="anonymous" />`)
+    .join("\n  ")
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${doc.title}</title>
+${fontLinks}
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #f4f4f5; display: flex; flex-direction: column; align-items: center; gap: 32px; padding: 32px; }

@@ -10,7 +10,9 @@ const MAX_DOCUMENT_CONTEXT_CHARS = 450_000
  */
 export function sanitizeDocumentForLlmContext(doc: DesignDocument): DesignDocument {
   const clone = JSON.parse(JSON.stringify(doc)) as DesignDocument
+  if (!Array.isArray(clone.pages)) clone.pages = []
   for (const page of clone.pages) {
+    if (!Array.isArray(page.elements)) page.elements = []
     for (const el of page.elements) {
       if (el.kind === "image" && typeof el.src === "string" && el.src.startsWith("data:")) {
         const kb = Math.max(1, Math.round(el.src.length / 1024))
@@ -21,7 +23,8 @@ export function sanitizeDocumentForLlmContext(doc: DesignDocument): DesignDocume
   return clone
 }
 
-/** Full design-mode system prompt rules + current document snapshot. */
+/** Full design-mode system prompt rules + current document snapshot (one-shot generation). */
+/** Agent multi-phase flows use `design-phase-prompts.ts` + `design-pattern-retrieval.ts` instead of duplicating this entire block per call. */
 export function buildDesignSystemPrompt(document: DesignDocument | null): string {
   let docContext = document ? JSON.stringify(sanitizeDocumentForLlmContext(document)) : "No document yet"
   if (docContext.length > MAX_DOCUMENT_CONTEXT_CHARS) {
@@ -60,8 +63,13 @@ For kind (3), "assistantNote" is optional; you may use it to add brief next-step
   pages: [{ id, width, height, backgroundColor, elements: [...] }]
 }
 
+FRAME FILL (like Figma artboard / frame):
+- Each page is a fixed-size frame. The visible artboard background is ONLY \`page.backgroundColor\` (solid hex). The renderer draws it behind all elements — you do not need a layer for it.
+- Do NOT add a full-page \`shape: "rectangle"\` at x=0,y=0 with width=page.width and height=page.height solely to simulate a background; that duplicates the frame fill and clutters the layer list.
+- Card rectangles, strips, and semi-transparent overlay shapes that do not cover the entire page are fine.
+
 ELEMENT TYPES:
-- text:  { kind:"text", id, x, y, width, height, rotation, zIndex, opacity, content, fontFamily, fontSize, fontWeight:"normal"|"bold", fontStyle:"normal"|"italic", color, textAlign:"left"|"center"|"right", lineHeight }
+- text:  { kind:"text", id, x, y, width, height, rotation, zIndex, opacity, content, fontFamily, fontSize, fontWeight: numeric string "100"–"900" or legacy "normal"|"bold", fontStyle:"normal"|"italic", color, textAlign:"left"|"center"|"right", lineHeight }
 - shape: { kind:"shape", id, x, y, width, height, rotation, zIndex, opacity, shape:"rectangle"|"ellipse"|"triangle"|"line"|"arrow"|"polygon"|"star", fill, stroke?, strokeWidth?, borderRadius?, polygonSides? (3–12, polygon only), starPoints? (3–12, star only) }
 - image: { kind:"image", id, x, y, width, height, rotation, zIndex, opacity, src, objectFit:"cover"|"contain"|"fill" }
 - icon:  { kind:"icon", id, x, y, width, height, rotation, zIndex, opacity, iconName, color }
@@ -70,6 +78,7 @@ PATCH OPERATIONS:
 - { op:"create_element", pageId, element }
 - { op:"update_element", pageId, elementId, patch }
 - { op:"delete_element", pageId, elementId }
+- { op:"update_page", pageId, patch }   patch may include { backgroundColor } for the frame fill
 - { op:"apply_theme", theme }
 - { op:"create_page", page }
 - { op:"delete_page", pageId }
@@ -89,6 +98,11 @@ TYPOGRAPHY RULES:
 - Body text minimum 16px, never smaller.
 - Headings never smaller than 24px.
 - Use lineHeight values from the scale above — never omit lineHeight.
+
+GOOGLE FONTS / fontFamily:
+- Use a single real Google Fonts family name as the first face in \`fontFamily\` (e.g. "Roboto", "Playfair Display", "Inter") — not arbitrary multi-font stacks unless you document each face.
+- Prefer matching \`theme.fontFamily\` to that same Google name so headings and body stay consistent with what the canvas can load.
+- Optional fallbacks after the first face are fine (e.g. "Roboto, system-ui, sans-serif"); the canvas normalizes bundled Inter to the app's variable face.
 
 ━━━ SPACING (8px GRID) ━━━
 - All x, y, width, height values must be multiples of 8.
@@ -129,16 +143,14 @@ TAILWIND COLOR TOKENS (use ONLY these exact hex values for all colors):
 - The JSON in CURRENT DOCUMENT STATE lists each page's exact "width" and "height". That rectangle is the ONLY valid region for every element.
 - HARD RULE: for every element on a page, use integers that satisfy:
   x >= 0, y >= 0, x + width <= page.width, y + height <= page.height.
-- Never use negative x/y. Never let any part of an element extend past the page edge (no "bleed" unless the element is intentionally full-bleed background at x=0,y=0 with width=page.width,height=page.height).
+- Never use negative x/y. Never let any part of an element extend past the page edge.
 - TEXT OVERFLOW: Konva text wraps inside the element's width/height box. If a headline is long, either shorten the copy OR increase width OR reduce fontSize so the full message fits inside the box without needing more height than assigned. Prefer width ≈ page.width - 2×inset (inset at least 48px per side for body copy; 64px minimum margin still applies from spacing rules).
 - When creating a NEW document, set each page's width/height to the correct preset (e.g. Instagram 1080×1080, LinkedIn 1080×1350, slide 1920×1080) and place ALL content inside those bounds.
 - Before returning JSON, mentally verify each element's bounding box lies fully inside its page.
 
 ━━━ LAYOUT RULES ━━━
 - Max 6 elements per page/slide.
-- ALWAYS include at least 1 background shape element (full-page rectangle) at zIndex 1.
-  This ensures a solid, visible background regardless of page.backgroundColor rendering.
-- Content elements start at zIndex 2 and increment from there.
+- Stack order: assign zIndex starting at 1 for the bottom-most content layer and increment by 1 for each layer above (no reserved slot for a fake background shape).
 - LinkedIn carousel/post: width=1080, height=1350.
 - Instagram post: width=1080, height=1080.
 - Presentation slide: width=1920, height=1080.
@@ -154,7 +166,7 @@ FLEX-LIKE ALIGNMENT (think in columns/rows, then convert to x/y):
 - For 1920×1080 slides: use thirds — left third (x=64–640), center, right third (x=1280–1856).
 
 ━━━ VISUAL POLISH ━━━
-- Gradient effect: layer a semi-transparent shape (opacity 0.15–0.35) over the background shape.
+- Gradient-like depth: layer a semi-transparent shape (opacity 0.15–0.35) over the artboard — smaller than full page unless intentional — or rely on solid page.backgroundColor plus typography.
 - Use shape elements with borderRadius 16 for cards and section backgrounds.
 - Decorative circles/shapes add depth — use opacity 0.08–0.25.
 - Reserve the bottom 15% of LinkedIn posts for a CTA or branding element.
@@ -164,23 +176,21 @@ FLEX-LIKE ALIGNMENT (think in columns/rows, then convert to x/y):
 You MUST pick one palette and apply it consistently across the entire design:
 
 DARK PALETTE (use for "dark", "bold", "professional", or unspecified themes):
-  page.backgroundColor = "#0F172A"
-  Background shape fill  = "#1E293B"   (full-page rectangle, zIndex 1)
+  page.backgroundColor = "#0F172A"   (frame fill — this is the slide background)
   Primary text color     = "#F8FAFC"
   Secondary text color   = "#94A3B8"
   Accent color           = "#6366F1"   (or #F59E0B, #10B981 — one only)
 
 LIGHT PALETTE (use when user explicitly asks for "light" or "minimal"):
-  page.backgroundColor = "#F8FAFC"
-  Background shape fill  = "#FFFFFF"   (full-page rectangle, zIndex 1)
+  page.backgroundColor = "#F8FAFC"   (frame fill)
   Primary text color     = "#0F172A"
   Secondary text color   = "#475569"
   Accent color           = "#6366F1"
 
-NEVER mix light text colors with a light background shape, or dark text with a dark background.
+NEVER mix light text colors with a light page.backgroundColor, or dark text with a dark page.backgroundColor.
 
-━━━ MINIMAL CORRECT EXAMPLE (1 dark slide, 1920×1080) ━━━
-{"kind":"document","document":{"id":"abc12345","title":"Example","type":"slide","createdAt":"2024-01-01T00:00:00Z","updatedAt":"2024-01-01T00:00:00Z","theme":{"primaryColor":"#6366F1","secondaryColor":"#1E293B","accentColor":"#F59E0B","backgroundColor":"#0F172A","fontFamily":"Inter"},"pages":[{"id":"pg000001","width":1920,"height":1080,"backgroundColor":"#0F172A","elements":[{"kind":"shape","id":"bg000001","x":0,"y":0,"width":1920,"height":1080,"rotation":0,"zIndex":1,"opacity":1,"shape":"rectangle","fill":"#1E293B"},{"kind":"text","id":"tx000001","x":192,"y":320,"width":1536,"height":128,"rotation":0,"zIndex":2,"opacity":1,"content":"Your Headline Here","fontFamily":"Inter","fontSize":72,"fontWeight":"bold","fontStyle":"normal","color":"#F8FAFC","textAlign":"center","lineHeight":1.1}]}]}}
+━━━ MINIMAL CORRECT EXAMPLE (1 dark slide, 1920×1080 — frame fill only, no full-page bg shape) ━━━
+{"kind":"document","document":{"id":"abc12345","title":"Example","type":"slide","createdAt":"2024-01-01T00:00:00Z","updatedAt":"2024-01-01T00:00:00Z","theme":{"primaryColor":"#6366F1","secondaryColor":"#1E293B","accentColor":"#F59E0B","backgroundColor":"#0F172A","fontFamily":"Inter"},"pages":[{"id":"pg000001","width":1920,"height":1080,"backgroundColor":"#0F172A","elements":[{"kind":"text","id":"tx000001","x":192,"y":320,"width":1536,"height":128,"rotation":0,"zIndex":1,"opacity":1,"content":"Your Headline Here","fontFamily":"Inter","fontSize":72,"fontWeight":"bold","fontStyle":"normal","color":"#F8FAFC","textAlign":"center","lineHeight":1.1}]}]}}
 
 ━━━ OUTPUT CONTRACT ━━━
 - Respond ONLY with a JSON object. No prose before or after. No markdown code fences.
@@ -189,10 +199,17 @@ NEVER mix light text colors with a light background shape, or dark text with a d
 - Every numeric value (x, y, width, height, fontSize, lineHeight, opacity) must be a number, not a string.
 - page.backgroundColor is REQUIRED and must be a non-empty hex string.
 - All element ids and page ids must be unique 8-char strings.
-- zIndex starts at 1 for background, increments by 1 for each layer above.
+- zIndex: bottom layer = 1, each layer above increments by 1 (no reserved background layer).
 - For follow-up edits, always prefer patches over full document replacement.
 - First message with no document: always return a full "document" response.
 
 CURRENT DOCUMENT STATE (image data URLs are replaced with placeholders in this snapshot; the real pixels remain on the canvas):
 ${docContext}`
+}
+
+/** Shorter snapshot for multi-phase agent calls (intent/plan/tokens) to save tokens. */
+export function buildSlimDocumentContextForAgent(document: DesignDocument | null, maxChars = 14_000): string {
+  if (!document) return "No document yet."
+  const s = JSON.stringify(sanitizeDocumentForLlmContext(document))
+  return s.length > maxChars ? `${s.slice(0, maxChars)}\n…[document JSON truncated]` : s
 }

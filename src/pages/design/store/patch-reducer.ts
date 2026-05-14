@@ -1,4 +1,5 @@
-import type { DesignDocument, PatchOp } from "../types"
+import type { DesignDocument, DesignPage, PatchOp } from "../types"
+import { safePageElements } from "../lib/safe-page-elements"
 
 export function applyPatch(doc: DesignDocument, op: PatchOp): DesignDocument {
   switch (op.op) {
@@ -7,7 +8,7 @@ export function applyPatch(doc: DesignDocument, op: PatchOp): DesignDocument {
         ...doc,
         updatedAt: new Date().toISOString(),
         pages: doc.pages.map((p) =>
-          p.id === op.pageId ? { ...p, elements: [...p.elements, op.element] } : p,
+          p.id === op.pageId ? { ...p, elements: [...safePageElements(p), op.element] } : p,
         ),
       }
     }
@@ -20,7 +21,7 @@ export function applyPatch(doc: DesignDocument, op: PatchOp): DesignDocument {
           p.id === op.pageId
             ? {
                 ...p,
-                elements: p.elements.map((el) =>
+                elements: safePageElements(p).map((el) =>
                   el.id === op.elementId ? ({ ...el, ...op.patch } as typeof el) : el,
                 ),
               }
@@ -35,7 +36,7 @@ export function applyPatch(doc: DesignDocument, op: PatchOp): DesignDocument {
         updatedAt: new Date().toISOString(),
         pages: doc.pages.map((p) =>
           p.id === op.pageId
-            ? { ...p, elements: p.elements.filter((el) => el.id !== op.elementId) }
+            ? { ...p, elements: safePageElements(p).filter((el) => el.id !== op.elementId) }
             : p,
         ),
       }
@@ -65,6 +66,16 @@ export function applyPatch(doc: DesignDocument, op: PatchOp): DesignDocument {
       }
     }
 
+    case "update_page": {
+      return {
+        ...doc,
+        updatedAt: new Date().toISOString(),
+        pages: doc.pages.map((p) =>
+          p.id === op.pageId ? ({ ...p, ...op.patch } as DesignPage) : p,
+        ),
+      }
+    }
+
     case "reorder_element": {
       return {
         ...doc,
@@ -73,7 +84,7 @@ export function applyPatch(doc: DesignDocument, op: PatchOp): DesignDocument {
           p.id === op.pageId
             ? {
                 ...p,
-                elements: p.elements.map((el) =>
+                elements: safePageElements(p).map((el) =>
                   el.id === op.elementId ? { ...el, zIndex: op.zIndex } : el,
                 ),
               }
@@ -85,4 +96,8 @@ export function applyPatch(doc: DesignDocument, op: PatchOp): DesignDocument {
     default:
       return doc
   }
+}
+
+export function applyPatchesToDocument(doc: DesignDocument, patches: PatchOp[]): DesignDocument {
+  return patches.reduce((acc, op) => applyPatch(acc, op), doc)
 }

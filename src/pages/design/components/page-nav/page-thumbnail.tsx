@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils"
 import type { DesignPage } from "../../types"
+import { safePageElements } from "../../lib/safe-page-elements"
 
 interface Props {
   page: DesignPage
@@ -15,7 +16,7 @@ export function PageThumbnail({ page, index, isActive, onClick }: Props) {
   const h = page.height > 0 ? page.height : 1080
   const scale = THUMB_WIDTH / w
   const thumbHeight = Math.round(h * scale)
-  const elements = page.elements ?? []
+  const elements = safePageElements(page)
 
   return (
     <button

@@ -1,10 +1,11 @@
 import type { FileUIPart } from "ai"
-import { streamChat, type StreamChatResult } from "@/lib/llm-service"
+import { streamChat, type AgentPhaseSsePayload, type StreamChatResult } from "@/lib/llm-service"
 import type { LlmChatMessage } from "@/lib/llm-types"
 import type { MockSource } from "@/lib/mock-chat-data"
 import { extractJsonFromStream } from "./design-json-parser"
 import { useDesignStore } from "../store/design-store"
 import { buildDesignSystemPrompt } from "./design-prompt"
+import { runDesignAgentTurn, type DesignAgentPhaseTrace } from "./design-agent-orchestrator"
 
 export type DesignCitation = { href: string; label: string }
 
@@ -12,16 +13,23 @@ export type DesignChatMessage = {
   id: string
   role: "user" | "assistant"
   content: string
+  /** Snapshot at send time: multi-phase agent vs single JSON completion. */
+  agentPipelineForTurn?: boolean
+  /** Snapshot of files sent with this user turn (for transcript UI). */
+  attachments?: (FileUIPart & { id: string })[]
   isStreaming?: boolean
   error?: string
   /** From SSE `sources` / `citations` (e.g. grounded links in assistant text). */
   sources?: MockSource[]
   citations?: DesignCitation[]
+  /** Slim trace of multi-phase agent (summaries + optional raw JSON per phase). */
+  agentTrace?: DesignAgentPhaseTrace[]
 }
 
 export type DesignAssistantStreamMeta = {
   sources: MockSource[]
   citations: DesignCitation[]
+  agentTrace?: DesignAgentPhaseTrace[]
 }
 
 export async function sendDesignMessage(options: {
@@ -34,6 +42,15 @@ export async function sendDesignMessage(options: {
   onSuggestions?: (suggestions: string[]) => void
   onError: (msg: string) => void
   signal?: AbortSignal
+  /**
+   * When set, selects agent vs one-shot for this request (must match UI for this assistant turn).
+   * If omitted, reads `designAgentPipelineEnabled` from the design store.
+   */
+  agentPipelineForTurn?: boolean
+  /** SSE `agent_phase` events (when phase id is sent to `/api/chat`). */
+  onAgentPhase?: (payload: AgentPhaseSsePayload) => void
+  /** After each design-agent phase completes (browser orchestrator). */
+  onDesignAgentPhase?: (trace: DesignAgentPhaseTrace) => void
 }) {
   const {
     userMessage,
@@ -45,8 +62,35 @@ export async function sendDesignMessage(options: {
     onSuggestions,
     onError,
     signal,
+    agentPipelineForTurn: agentPipelineForTurnOption,
+    onAgentPhase,
+    onDesignAgentPhase,
   } = options
-  const { document, designChatModel } = useDesignStore.getState()
+  const { document, designChatModel, designAgentPipelineEnabled } = useDesignStore.getState()
+  const agentPipelineForTurn = agentPipelineForTurnOption ?? designAgentPipelineEnabled
+
+  if (agentPipelineForTurn) {
+    try {
+      const { response, phases } = await runDesignAgentTurn({
+        userMessage,
+        attachments,
+        signal,
+        model: designChatModel,
+        onAgentPhase,
+        onPhaseComplete: onDesignAgentPhase,
+      })
+      onParsed(response, { sources: [], citations: [], agentTrace: phases })
+      onStreamResult?.({
+        completionStatus: "completed",
+        emittedTokens: 0,
+        finishReason: "stop",
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error"
+      onError(msg)
+    }
+    return
+  }
 
   const systemPrompt = buildDesignSystemPrompt(document)
 
@@ -68,12 +112,8 @@ export async function sendDesignMessage(options: {
       messages,
       ...(attachments && attachments.length > 0 ? { attachments } : {}),
       temperature: 0.3,
-      // Large design replies (full document JSON) need more headroom than chat; capped by api/chat MAX_TOKENS_CAP.
       maxTokens: 12_000,
-      // Mistral JSON mode: strongly biases toward a single parseable JSON object.
       responseFormat: "json_object",
-      // Same handler as main chat; avoids a separate serverless entry that can fail to bundle.
-      // Large design payloads (esp. image data URLs) are stripped in buildDesignSystemPrompt.
       chatApiPath: "/api/chat",
       onToken: (token) => {
         buffer += token

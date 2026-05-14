@@ -57,7 +57,25 @@ function mistralDeltaToText(content) {
       out += part
       continue
     }
-    if (part && typeof part === "object" && typeof part.text === "string") out += part.text
+    if (part && typeof part === "object") {
+      const p = part
+      if (typeof p.text === "string") {
+        out += p.text
+        continue
+      }
+      if (typeof p.content === "string") {
+        out += p.content
+        continue
+      }
+      if (typeof p.delta === "string") {
+        out += p.delta
+        continue
+      }
+      const t = p.type
+      if ((t === "output_text" || t === "json" || t === "output") && p.json !== undefined) {
+        out += typeof p.json === "string" ? p.json : JSON.stringify(p.json)
+      }
+    }
   }
   return out
 }
@@ -70,7 +88,8 @@ async function handleChat(req, res) {
   let parsed
   try { parsed = JSON.parse(body) } catch { parsed = {} }
 
-  const { model, messages, temperature, maxTokens, responseFormat } = parsed
+  const { model, messages, temperature, maxTokens, responseFormat, designAgentPhase: designAgentPhaseRaw } = parsed
+  const designAgentPhase = typeof designAgentPhaseRaw === "string" ? designAgentPhaseRaw.trim() : ""
 
   if (responseFormat !== undefined && responseFormat !== "json_object") {
     res.writeHead(400, { "Content-Type": "application/json" })
@@ -117,6 +136,18 @@ async function handleChat(req, res) {
 
   if (!upstream.ok && wantJsonObject && upstream.status === 400) {
     await upstream.text().catch(() => "")
+    if (designAgentPhase.length > 0) {
+      res.writeHead(502, { "Content-Type": "application/json" })
+      return res.end(
+        JSON.stringify({
+          error: {
+            code: "mistral_json_mode_required",
+            message:
+              "Mistral rejected JSON mode for this request (HTTP 400). Design agent steps require structured JSON output—try mistral-small-latest, shorten the prompt, or reduce/remove image attachments.",
+          },
+        }),
+      )
+    }
     console.warn("[dev-api-server] Mistral rejected response_format json_object; retrying without JSON mode.")
     upstream = await fetch("https://api.mistral.ai/v1/chat/completions", {
       method: "POST",

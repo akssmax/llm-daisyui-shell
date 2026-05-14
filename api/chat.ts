@@ -37,6 +37,13 @@ type ChatRequestBody = {
   sessionSummary?: string
   /** Forwarded to Mistral as `response_format` (design JSON requests only). */
   responseFormat?: "json_object"
+  /**
+   * When set, the stream emits `agent_phase` SSE events at start/end of this upstream call
+   * so the client can show tool-style progress (design agent orchestration).
+   */
+  designAgentPhase?: string
+  /** Human-readable label for the phase (optional). */
+  designAgentPhaseLabel?: string
 }
 
 type CompletionStatus = "completed" | "max_tokens_reached"
@@ -227,8 +234,26 @@ function mistralDeltaToText(content: unknown): string {
       out += part
       continue
     }
-    if (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string") {
-      out += (part as { text: string }).text
+    if (part && typeof part === "object") {
+      const p = part as Record<string, unknown>
+      if (typeof p.text === "string") {
+        out += p.text
+        continue
+      }
+      if (typeof p.content === "string") {
+        out += p.content
+        continue
+      }
+      // Some Mistral / gateway payloads nest text or JSON under typed parts.
+      if (typeof p.delta === "string") {
+        out += p.delta
+        continue
+      }
+      const t = p.type
+      if ((t === "output_text" || t === "json" || t === "output") && p.json !== undefined) {
+        out += typeof p.json === "string" ? p.json : JSON.stringify(p.json)
+        continue
+      }
     }
   }
   return out
@@ -342,6 +367,18 @@ function validateRequest(body: ChatRequestBody): { ok: true } | { ok: false; sta
     return {
       code: "invalid_response_format",
       message: "responseFormat must be json_object or omitted.",
+      ok: false,
+      status: 400,
+    }
+  }
+
+  if (body.designAgentPhase !== undefined && typeof body.designAgentPhase !== "string") {
+    return { code: "invalid_design_agent_phase", message: "designAgentPhase must be a string.", ok: false, status: 400 }
+  }
+  if (body.designAgentPhaseLabel !== undefined && typeof body.designAgentPhaseLabel !== "string") {
+    return {
+      code: "invalid_design_agent_phase_label",
+      message: "designAgentPhaseLabel must be a string.",
       ok: false,
       status: 400,
     }
@@ -503,6 +540,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     timeout = setTimeout(() => controller.abort("timeout"), timeoutMs)
     const mistralMessages = toMistralMessages(finalMessages, attachments)
     const wantJsonObject = body.responseFormat === "json_object"
+    const designAgentPhase = typeof body.designAgentPhase === "string" ? body.designAgentPhase.trim() : ""
     const mistralBase = {
       max_tokens: resolvedMaxTokens,
       messages: mistralMessages,
@@ -526,6 +564,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (!response.ok && wantJsonObject && response.status === 400) {
       await response.text().catch(() => "")
+      if (designAgentPhase.length > 0) {
+        return jsonError(
+          res,
+          502,
+          "mistral_json_mode_required",
+          "Mistral rejected JSON mode for this request (HTTP 400). Design agent steps require structured JSON output—try mistral-small-latest, shorten the prompt, or reduce/remove image attachments.",
+        )
+      }
       console.warn("[api/chat] Mistral rejected response_format json_object; retrying without JSON mode.")
       response = await fetch("https://api.mistral.ai/v1/chat/completions", {
         body: JSON.stringify(mistralBase),
@@ -551,6 +597,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     res.setHeader("Cache-Control", "no-cache, no-transform")
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8")
     res.setHeader("X-Accel-Buffering", "no")
+
+    const agentPhase = designAgentPhase
+    const agentPhaseLabel = typeof body.designAgentPhaseLabel === "string" ? body.designAgentPhaseLabel.trim() : ""
+    if (agentPhase.length > 0) {
+      writeSse(res, "agent_phase", {
+        kind: "start",
+        phase: agentPhase.slice(0, 64),
+        ...(agentPhaseLabel ? { label: agentPhaseLabel.slice(0, 120) } : {}),
+      })
+    }
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
@@ -631,6 +687,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     } catch {
       // Suggestions are optional; skip on failure.
+    }
+
+    if (agentPhase.length > 0) {
+      writeSse(res, "agent_phase", {
+        kind: "complete",
+        phase: agentPhase.slice(0, 64),
+        ...(agentPhaseLabel ? { label: agentPhaseLabel.slice(0, 120) } : {}),
+      })
     }
 
     const completionStatus: CompletionStatus =

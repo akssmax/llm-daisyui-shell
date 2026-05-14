@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware"
 import { nanoid } from "nanoid"
 import type { MistralModel } from "@/lib/llm-types"
 import type { DesignDocument, PatchOp, Theme, ShapeKind } from "../types"
+import { safePageElements } from "../lib/safe-page-elements"
 import { applyPatch } from "./patch-reducer"
 
 export type ActiveTool = "select" | "hand" | "text" | "shape" | "image" | "icon"
@@ -43,6 +44,10 @@ type DesignState = {
   designChatThreadNonce: number
   /** Active shape geometry when `activeTool === "shape"` (Figma-style shape picker). */
   shapeToolVariant: ShapeKind
+  /** Incremented after design fonts load so Konva text redraws with new `document.fonts`. */
+  fontEpoch: number
+  /** Multi-phase design agent (intent → tokens → layout → compose → validate/repair). Default off. */
+  designAgentPipelineEnabled: boolean
 
   setDocument: (doc: DesignDocument) => void
   resetDesignChatThread: () => void
@@ -66,8 +71,10 @@ type DesignState = {
   resetViewport: () => void
   setPendingDesignImage: (dataUrl: string | null) => void
   setDesignChatModel: (model: MistralModel) => void
+  setDesignAgentPipelineEnabled: (enabled: boolean) => void
   setCanvasFitScale: (fitScale: number) => void
   requestCanvasFit: () => void
+  bumpFontEpoch: () => void
 }
 
 export const useDesignStore = create<DesignState>()(
@@ -93,6 +100,8 @@ export const useDesignStore = create<DesignState>()(
       canvasFitRequestTick: 0,
       designChatThreadNonce: 0,
       shapeToolVariant: "rectangle",
+      fontEpoch: 0,
+      designAgentPipelineEnabled: false,
 
       resetDesignChatThread: () =>
         set((s) => ({ designChatThreadNonce: s.designChatThreadNonce + 1 })),
@@ -170,14 +179,15 @@ export const useDesignStore = create<DesignState>()(
         if (!doc || !selection.pageId || selection.elementIds.length !== 1) return
         const page = doc.pages.find((p) => p.id === selection.pageId)
         if (!page) return
+        const elements = safePageElements(page)
         const id = selection.elementIds[0]
-        const el = page.elements.find((e) => e.id === id)
+        const el = elements.find((e) => e.id === id)
         if (!el) return
         const clone = structuredClone(el) as typeof el
         clone.id = nanoid(8)
         clone.x = el.x + 16
         clone.y = el.y + 16
-        clone.zIndex = Math.max(0, ...page.elements.map((e) => e.zIndex)) + 1
+        clone.zIndex = Math.max(0, ...elements.map((e) => e.zIndex)) + 1
         get().applyPatches([{ op: "create_element", pageId: page.id, element: clone }], { clearSelection: false })
         set({ selection: { elementIds: [clone.id], pageId: page.id } })
       },
@@ -187,7 +197,7 @@ export const useDesignStore = create<DesignState>()(
         if (!doc || !selection.pageId || selection.elementIds.length !== 1) return
         const id = selection.elementIds[0]
         const page = doc.pages.find((p) => p.id === selection.pageId)
-        const el = page?.elements.find((e) => e.id === id)
+        const el = page ? safePageElements(page).find((e) => e.id === id) : undefined
         if (!el) return
         get().applyPatches(
           [{ op: "update_element", pageId: selection.pageId!, elementId: id, patch: { locked: !el.locked } }],
@@ -240,15 +250,18 @@ export const useDesignStore = create<DesignState>()(
         }),
       setPendingDesignImage: (dataUrl) => set({ pendingDesignImage: dataUrl }),
       setDesignChatModel: (model) => set({ designChatModel: model }),
+      setDesignAgentPipelineEnabled: (enabled) => set({ designAgentPipelineEnabled: enabled }),
       setCanvasFitScale: (fitScale) => set({ canvasFitScale: fitScale }),
       requestCanvasFit: () =>
         set((s) => ({ canvasFitRequestTick: s.canvasFitRequestTick + 1 })),
+      bumpFontEpoch: () => set((s) => ({ fontEpoch: s.fontEpoch + 1 })),
     }),
     {
       name: "chatShell.designs.v1",
       partialize: (state) => ({
         document: state.document,
         activePageId: state.activePageId,
+        designAgentPipelineEnabled: state.designAgentPipelineEnabled,
       }),
     },
   ),

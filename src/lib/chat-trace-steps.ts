@@ -21,8 +21,14 @@ export function buildUnifiedTraceSteps(params: {
   sources?: string[]
   isStreaming: boolean
   hasAssistantText: boolean
+  /**
+   * When false, omits the trailing "Generating response" step. Use for the design agent,
+   * which already shows per-phase tool rows (otherwise compose + generation both look "active").
+   * @default true
+   */
+  includeGenerationStep?: boolean
 }): UnifiedTraceStep[] {
-  const { itemId, reasoning, tools, sources, isStreaming, hasAssistantText } = params
+  const { itemId, reasoning, tools, sources, isStreaming, hasAssistantText, includeGenerationStep } = params
   const steps: UnifiedTraceStep[] = []
 
   if (reasoning?.trim()) {
@@ -60,12 +66,14 @@ export function buildUnifiedTraceSteps(params: {
     })
   }
 
-  steps.push({
-    id: `${itemId}-generation`,
-    label: "Generating response",
-    description: isStreaming ? "In progress" : "Completed",
-    status: isStreaming ? "active" : hasAssistantText ? "complete" : "pending",
-  })
+  if (includeGenerationStep !== false) {
+    steps.push({
+      id: `${itemId}-generation`,
+      label: "Generating response",
+      description: isStreaming ? "In progress" : "Completed",
+      status: isStreaming ? "active" : hasAssistantText ? "complete" : "pending",
+    })
+  }
 
   return steps
 }

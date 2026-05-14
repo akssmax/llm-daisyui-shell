@@ -956,6 +956,7 @@ export type PromptInputTextareaProps = ComponentProps<
 export const PromptInputTextarea = ({
   onChange,
   onKeyDown,
+  onPaste: onPasteProp,
   className,
   placeholder = "What would you like to know?",
   ...props
@@ -1013,20 +1014,40 @@ export const PromptInputTextarea = ({
 
   const handlePaste: ClipboardEventHandler<HTMLTextAreaElement> = useCallback(
     (event) => {
-      const items = event.clipboardData?.items;
+      onPasteProp?.(event);
+      if (event.defaultPrevented) {
+        return;
+      }
 
-      if (!items) {
+      const data = event.clipboardData;
+      if (!data) {
         return;
       }
 
       const files: File[] = [];
+      const seen = new Set<string>();
+      const push = (file: File) => {
+        const key = `${file.name}\0${file.size}\0${file.lastModified}\0${file.type}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        files.push(file);
+      };
 
-      for (const item of items) {
-        if (item.kind === "file") {
-          const file = item.getAsFile();
-          if (file) {
-            files.push(file);
+      if (data.items) {
+        for (const item of data.items) {
+          if (item.kind === "file") {
+            const file = item.getAsFile();
+            if (file) push(file);
           }
+        }
+      }
+      // `items` and `files` often describe the same pasted image as different `File`
+      // instances (e.g. different `lastModified`), which breaks name/size/mod dedupe.
+      // Prefer `items`; only read `files` when nothing was found there.
+      if (files.length === 0 && data.files?.length) {
+        for (let i = 0; i < data.files.length; i++) {
+          const file = data.files.item(i);
+          if (file) push(file);
         }
       }
 
@@ -1035,7 +1056,7 @@ export const PromptInputTextarea = ({
         attachments.add(files);
       }
     },
-    [attachments]
+    [attachments, onPasteProp]
   );
 
   const handleCompositionEnd = useCallback(() => setIsComposing(false), []);

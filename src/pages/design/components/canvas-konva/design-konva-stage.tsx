@@ -8,6 +8,9 @@ import type { DesignElement, DesignPage, ShapeElement, TextElement, ShapeKind } 
 import { useDesignStore, type ActiveTool } from "../../store/design-store"
 import { DesignElementNode } from "./design-element-node"
 import { snapToDesignGrid } from "../../lib/design-snap"
+import { fontFamilyForKonva } from "../../lib/design-fonts"
+import { htmlTextareaFontWeight } from "../../lib/design-text-style"
+import { safePageElements } from "../../lib/safe-page-elements"
 
 const MIN_SHAPE = 8
 
@@ -95,7 +98,7 @@ export function DesignKonvaStage({
   onPanChange,
   onViewportChange,
 }: Props) {
-  const { selection, selectElements, clearSelection, applyPatches, pendingDesignImage, setPendingDesignImage, setActiveTool, shapeToolVariant } =
+  const { selection, selectElements, clearSelection, applyPatches, pendingDesignImage, setPendingDesignImage, setActiveTool, shapeToolVariant, fontEpoch } =
     useDesignStore(
     useShallow((s) => ({
       selection: s.selection,
@@ -106,6 +109,7 @@ export function DesignKonvaStage({
       setPendingDesignImage: s.setPendingDesignImage,
       setActiveTool: s.setActiveTool,
       shapeToolVariant: s.shapeToolVariant,
+      fontEpoch: s.fontEpoch,
     })),
   )
 
@@ -132,7 +136,8 @@ export function DesignKonvaStage({
   const centerX = (width - page.width * totalScale) / 2
   const centerY = (height - page.height * totalScale) / 2
 
-  const sorted = useMemo(() => [...(page.elements ?? [])].sort((a, b) => a.zIndex - b.zIndex), [page.elements])
+  const pageElements = useMemo(() => safePageElements(page), [page])
+  const sorted = useMemo(() => [...pageElements].sort((a, b) => a.zIndex - b.zIndex), [pageElements])
 
   const pageBg =
     page.backgroundColor && page.backgroundColor !== "transparent" ? page.backgroundColor : "#FFFFFF"
@@ -179,7 +184,13 @@ export function DesignKonvaStage({
 
   useLayoutEffect(() => {
     attachTransformerToSelection()
-  }, [attachTransformerToSelection, sorted, page.id])
+  }, [attachTransformerToSelection, sorted, page.id, fontEpoch])
+
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    stage.getLayers().forEach((layer) => layer.batchDraw())
+  }, [fontEpoch])
 
   useEffect(() => {
     if (activeTool !== "image" || !pendingDesignImage) return
@@ -204,7 +215,7 @@ export function DesignKonvaStage({
         width: w,
         height: h,
         rotation: 0,
-        zIndex: Math.max(0, ...page.elements.map((e) => e.zIndex)) + 1,
+        zIndex: Math.max(0, ...pageElements.map((e) => e.zIndex)) + 1,
         opacity: 1,
         src,
         objectFit: "cover",
@@ -222,7 +233,7 @@ export function DesignKonvaStage({
   }, [
     activeTool,
     pendingDesignImage,
-    page.elements,
+    pageElements,
     page.height,
     page.id,
     page.width,
@@ -429,7 +440,7 @@ export function DesignKonvaStage({
 
   const commitTextEdit = useCallback(() => {
     if (!textEditId) return
-    const el = page.elements.find((e) => e.id === textEditId)
+    const el = pageElements.find((e) => e.id === textEditId)
     if (!el || el.kind !== "text") {
       cancelTextEdit()
       return
@@ -444,12 +455,12 @@ export function DesignKonvaStage({
     setTextEditId(null)
     setTextDraft("")
     setTextBox(null)
-  }, [applyPatches, cancelTextEdit, page.elements, page.id, textDraft, textEditId])
+  }, [applyPatches, cancelTextEdit, pageElements, page.id, textDraft, textEditId])
 
   const handleTextDblClick = useCallback(
     (elementId: string, pageId: string) => {
       if (activeTool === "hand" || pageId !== page.id) return
-      const el = page.elements.find((e) => e.id === elementId)
+      const el = pageElements.find((e) => e.id === elementId)
       if (!el || el.kind !== "text" || el.locked) return
       if (CREATION_TOOLS.includes(activeTool)) {
         setActiveTool("select")
@@ -458,7 +469,7 @@ export function DesignKonvaStage({
       setTextEditId(elementId)
       setTextDraft(el.content)
     },
-    [activeTool, page.elements, page.id, setActiveTool],
+    [activeTool, pageElements, page.id, setActiveTool],
   )
 
   useLayoutEffect(() => {
@@ -499,14 +510,14 @@ export function DesignKonvaStage({
 
   useEffect(() => {
     if (!textEditId) return
-    if (!page.elements.some((e) => e.id === textEditId)) cancelTextEdit()
-  }, [cancelTextEdit, page.elements, textEditId])
+    if (!pageElements.some((e) => e.id === textEditId)) cancelTextEdit()
+  }, [cancelTextEdit, pageElements, textEditId])
 
   const editingText = useMemo(() => {
     if (!textEditId) return undefined
-    const el = page.elements.find((e) => e.id === textEditId)
+    const el = pageElements.find((e) => e.id === textEditId)
     return el?.kind === "text" ? el : undefined
-  }, [page.elements, textEditId])
+  }, [pageElements, textEditId])
 
   const onStageMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -534,7 +545,7 @@ export function DesignKonvaStage({
         setDraftShape({ x: lx, y: ly, w: 0, h: 0 })
       }
       if (activeTool === "text") {
-        const z = Math.max(0, ...page.elements.map((el) => el.zIndex)) + 1
+        const z = Math.max(0, ...pageElements.map((el) => el.zIndex)) + 1
         const tw = snapToDesignGrid(280, snapToGrid)
         const th = snapToDesignGrid(48, snapToGrid)
         const tx = snapToDesignGrid(lx - tw / 2, snapToGrid)
@@ -567,7 +578,7 @@ export function DesignKonvaStage({
       activeTool,
       applyPatches,
       clearSelection,
-      page.elements,
+      pageElements,
       page.height,
       page.id,
       page.width,
@@ -614,7 +625,7 @@ export function DesignKonvaStage({
     } else {
       if (w < MIN_SHAPE || h < MIN_SHAPE) return
     }
-    const z = Math.max(0, ...page.elements.map((el) => el.zIndex)) + 1
+    const z = Math.max(0, ...pageElements.map((el) => el.zIndex)) + 1
     const width =
       variant === "line" || variant === "arrow"
         ? snapToDesignGrid(Math.max(1, w), snapToGrid)
@@ -634,7 +645,7 @@ export function DesignKonvaStage({
     applyPatches([{ op: "create_element", pageId: page.id, element: shape }], { clearSelection: false })
     selectElements([shape.id], page.id)
     setActiveTool("select")
-  }, [activeTool, applyPatches, draftShape, page.elements, page.id, selectElements, setActiveTool, shapeToolVariant, snapToGrid])
+  }, [activeTool, applyPatches, draftShape, pageElements, page.id, selectElements, setActiveTool, shapeToolVariant, snapToGrid])
 
   const gridLines = useMemo(() => {
     if (!showGrid) return null
@@ -692,19 +703,22 @@ export function DesignKonvaStage({
               listening={!isHand}
             />
             {gridLines}
-            {sorted.map((el) => (
-              <DesignElementNode
-                key={el.id}
-                ref={(node) => registerRef(el.id, node)}
-                element={el}
-                pageId={page.id}
-                interactionDisabled={interactionDisabled}
-                onSelect={handleSelect}
-                onTransformEnd={handleTransformEnd}
-                onDragEnd={handleDragEnd}
-                onTextDblClick={handleTextDblClick}
-              />
-            ))}
+            {/* Elements are clipped to artboard bounds so out-of-range AI output never overflows. */}
+            <Group clipX={0} clipY={0} clipWidth={page.width} clipHeight={page.height}>
+              {sorted.map((el) => (
+                <DesignElementNode
+                  key={el.id}
+                  ref={(node) => registerRef(el.id, node)}
+                  element={el}
+                  pageId={page.id}
+                  interactionDisabled={interactionDisabled}
+                  onSelect={handleSelect}
+                  onTransformEnd={handleTransformEnd}
+                  onDragEnd={handleDragEnd}
+                  onTextDblClick={handleTextDblClick}
+                />
+              ))}
+            </Group>
             {draftShape && draftShape.w > 0 && draftShape.h > 0 && activeTool === "shape" ? (
               shapeToolVariant === "ellipse" ? (
                 <Ellipse
@@ -820,17 +834,10 @@ export function DesignKonvaStage({
               border: "2px solid #3b82f6",
               borderRadius: 2,
               background: "rgba(255,255,255,0.96)",
-              fontFamily: editingText.fontFamily,
+              fontFamily: fontFamilyForKonva(editingText.fontFamily),
               fontSize: editingText.fontSize,
-              fontWeight: editingText.fontWeight,
-              fontStyle:
-                editingText.fontStyle === "italic" && editingText.fontWeight === "bold"
-                  ? "italic bold"
-                  : editingText.fontStyle === "italic"
-                    ? "italic"
-                    : editingText.fontWeight === "bold"
-                      ? "bold"
-                      : "normal",
+              fontWeight: htmlTextareaFontWeight(editingText.fontWeight),
+              fontStyle: editingText.fontStyle,
               color: editingText.color,
               textAlign: editingText.textAlign as "left" | "center" | "right",
               lineHeight: `${editingText.lineHeight * editingText.fontSize}px`,

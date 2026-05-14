@@ -6,6 +6,8 @@ import { Slider } from "@/components/ui/slider"
 import type { TextElement } from "../../types"
 import { useDesignStore } from "../../store/design-store"
 import { DesignColorPicker } from "./design-color-picker"
+import { DesignFontTypographyFields } from "./design-font-typography-fields"
+import { DesignFontFamilyControl } from "./design-font-family-control"
 
 interface Props {
   element: TextElement
@@ -24,7 +26,12 @@ export function TextProperties({ element, pageId }: Props) {
 
   return (
     <div className="flex flex-col gap-3 p-3">
-      <div className="grid grid-cols-2 gap-2">
+      <DesignFontFamilyControl
+        key={element.id}
+        fontFamily={element.fontFamily}
+        onCommitStack={(stack) => update({ fontFamily: stack })}
+      />
+      <div className="grid grid-cols-2 gap-x-2 gap-y-2">
         <div className="flex flex-col gap-1">
           <Label className="text-xs">Font size</Label>
           <Input
@@ -36,18 +43,12 @@ export function TextProperties({ element, pageId }: Props) {
             className="h-7 text-xs"
           />
         </div>
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs">Font weight</Label>
-          <Select value={element.fontWeight} onValueChange={(v) => update({ fontWeight: v as "normal" | "bold" })}>
-            <SelectTrigger className="h-7 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="normal">Normal</SelectItem>
-              <SelectItem value="bold">Bold</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <DesignFontTypographyFields
+          fontFamily={element.fontFamily}
+          fontWeight={element.fontWeight}
+          fontStyle={element.fontStyle}
+          onPatch={(patch) => update(patch)}
+        />
       </div>
 
       <div className="flex flex-col gap-1">

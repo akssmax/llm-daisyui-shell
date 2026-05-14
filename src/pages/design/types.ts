@@ -15,7 +15,8 @@ export type TextElement = ElementBase & {
   content: string
   fontFamily: string
   fontSize: number
-  fontWeight: "normal" | "bold"
+  /** CSS `font-weight`: `"100"`–`"900"`, or legacy `"normal"` / `"bold"`. */
+  fontWeight: string
   fontStyle: "normal" | "italic"
   color: string
   textAlign: "left" | "center" | "right"
@@ -97,6 +98,7 @@ export type PatchOp =
   | { op: "apply_theme"; theme: Partial<Theme> }
   | { op: "create_page"; page: DesignPage }
   | { op: "delete_page"; pageId: string }
+  | { op: "update_page"; pageId: string; patch: Partial<Pick<DesignPage, "backgroundColor">> }
   | { op: "reorder_element"; pageId: string; elementId: string; zIndex: number }
 
 export type DesignAiResponse =

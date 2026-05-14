@@ -151,4 +151,50 @@ describe("extractJsonFromStream", () => {
     const r = extractJsonFromStream(raw)
     expect(r).toEqual({ kind: "message", text: "hi" })
   })
+
+  it("unwraps { response: { kind, document } } envelope", () => {
+    const inner = { kind: "document" as const, document: minimalDoc }
+    const raw = JSON.stringify({ response: inner })
+    const r = extractJsonFromStream(raw)
+    expect(r.kind).toBe("document")
+    if (r.kind === "document") expect(r.document.id).toBe("doc123456")
+  })
+
+  it("parses stringified document field", () => {
+    const raw = JSON.stringify({
+      kind: "document",
+      document: JSON.stringify(minimalDoc),
+    })
+    const r = extractJsonFromStream(raw)
+    expect(r.kind).toBe("document")
+    if (r.kind === "document") expect(r.document.title).toBe("Test")
+  })
+
+  it("coerces document when theme is null (agent compose drift)", () => {
+    const loose = {
+      ...minimalDoc,
+      theme: null,
+    }
+    const raw = JSON.stringify({ kind: "document", document: loose })
+    const r = extractJsonFromStream(raw)
+    expect(r.kind).toBe("document")
+    if (r.kind === "document") {
+      expect(r.document.theme.fontFamily).toBe("Inter")
+      expect(r.document.pages[0].elements).toEqual([])
+    }
+  })
+
+  it("parses design JSON when the model returns a JSON-encoded string", () => {
+    const inner = JSON.stringify({ kind: "document", document: minimalDoc })
+    const raw = JSON.stringify(inner)
+    const r = extractJsonFromStream(raw)
+    expect(r.kind).toBe("document")
+    if (r.kind === "document") expect(r.document.id).toBe("doc123456")
+  })
+
+  it("parses JSON inside an unclosed markdown fence", () => {
+    const inner = JSON.stringify({ kind: "message", text: "ok" })
+    const raw = "Here:\n```json\n" + inner
+    expect(extractJsonFromStream(raw)).toEqual({ kind: "message", text: "ok" })
+  })
 })

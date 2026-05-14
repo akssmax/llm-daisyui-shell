@@ -23,6 +23,8 @@ describe("buildDesignSystemPrompt", () => {
     const p = buildDesignSystemPrompt(doc)
     expect(p).toContain('"id":"doc123456"')
     expect(p).toContain("ALWAYS respond with ONLY a valid JSON object")
+    expect(p).toContain("update_page")
+    expect(p).toContain("Do NOT add a full-page")
   })
 
   it("uses placeholder when document is null", () => {

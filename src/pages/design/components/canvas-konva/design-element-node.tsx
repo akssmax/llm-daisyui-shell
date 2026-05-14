@@ -2,6 +2,8 @@ import { forwardRef, memo, useEffect, useState } from "react"
 import { Ellipse, Group, Image as KonvaImage, Line, Rect, Text, Arrow, Star, RegularPolygon } from "react-konva"
 import type Konva from "konva"
 import type { DesignElement, ImageElement } from "../../types"
+import { fontFamilyForKonva } from "../../lib/design-fonts"
+import { konvaFontStyleFromTextElement } from "../../lib/design-text-style"
 
 type Props = {
   element: DesignElement
@@ -92,14 +94,7 @@ export const DesignElementNode = memo(
     }
 
     if (element.kind === "text") {
-      const fontStyle =
-        element.fontStyle === "italic" && element.fontWeight === "bold"
-          ? "italic bold"
-          : element.fontStyle === "italic"
-            ? "italic"
-            : element.fontWeight === "bold"
-              ? "bold"
-              : "normal"
+      const fontStyle = konvaFontStyleFromTextElement(element)
       return (
         <Group
           ref={ref}
@@ -126,7 +121,7 @@ export const DesignElementNode = memo(
             width={element.width}
             height={element.height}
             text={element.content}
-            fontFamily={element.fontFamily}
+            fontFamily={fontFamilyForKonva(element.fontFamily)}
             fontSize={element.fontSize}
             fontStyle={fontStyle}
             fill={element.color}

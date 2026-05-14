@@ -8,6 +8,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable"
 import { useDesignStore } from "./store/design-store"
+import { useDesignDocumentFonts } from "./lib/design-fonts"
 import type { DesignDocument } from "./types"
 import { DesignChatPanel } from "./design-chat-panel"
 import { DesignCanvas, type DesignCanvasHandle } from "./components/canvas/design-canvas"
@@ -32,6 +33,8 @@ interface Props {
 export function DesignPage({ onDocumentChange }: Props) {
   const canvasRef = useRef<DesignCanvasHandle>(null)
   const document = useDesignStore((s) => s.document)
+  useDesignDocumentFonts(document)
+
   const { setActiveTool, setShapeToolVariant, clearSelection } = useDesignStore(
     useShallow((s) => ({
       setActiveTool: s.setActiveTool,

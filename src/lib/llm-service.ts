@@ -16,12 +16,21 @@ export type StreamChatResult = {
   maxTokens?: number
 }
 
+export type AgentPhaseSsePayload = {
+  kind: "start" | "complete" | "error"
+  phase: string
+  label?: string
+  message?: string
+}
+
 export interface StreamChatOptions extends LlmChatRequest {
   onToken: (token: string) => void
   onSuggestions?: (suggestions: string[]) => void
   onReasoning?: (reasoning: ReasoningMeta) => void
   onSources?: (sources: MockSource[]) => void
   onCitations?: (citations: Citation[]) => void
+  /** Design agent: `/api/chat` emits `agent_phase` when `designAgentPhase` is set on the request. */
+  onAgentPhase?: (payload: AgentPhaseSsePayload) => void
   onComplete?: (result: StreamChatResult) => void
   signal?: AbortSignal
   /** Defaults to `/api/chat`. Design mode uses `/api/design-chat`. */
@@ -70,7 +79,8 @@ async function streamSseResponse(
   onSuggestions?: (suggestions: string[]) => void,
   onReasoning?: (reasoning: ReasoningMeta) => void,
   onSources?: (sources: MockSource[]) => void,
-  onCitations?: (citations: Citation[]) => void
+  onCitations?: (citations: Citation[]) => void,
+  onAgentPhase?: (payload: AgentPhaseSsePayload) => void,
 ): Promise<StreamDonePayload | null> {
   if (!response.body) {
     throw new Error("Missing response body from /api/chat")
@@ -150,6 +160,24 @@ async function streamSseResponse(
       } catch {
         // Ignore malformed citations payloads.
       }
+    } else if (parsed.event === "agent_phase") {
+      try {
+        const payload = JSON.parse(parsed.data) as {
+          kind?: unknown
+          phase?: unknown
+          label?: unknown
+          message?: unknown
+        }
+        const kind = payload.kind === "start" || payload.kind === "complete" || payload.kind === "error" ? payload.kind : null
+        const phase = typeof payload.phase === "string" ? payload.phase : ""
+        if (!kind || !phase.trim()) return
+        const out: AgentPhaseSsePayload = { kind, phase: phase.trim() }
+        if (typeof payload.label === "string" && payload.label.trim()) out.label = payload.label.trim()
+        if (typeof payload.message === "string" && payload.message.trim()) out.message = payload.message.trim()
+        onAgentPhase?.(out)
+      } catch {
+        // Ignore malformed agent_phase payloads.
+      }
     } else if (parsed.event === "error") {
       try {
         const payload = JSON.parse(parsed.data) as { message?: string }
@@ -202,6 +230,7 @@ async function requestChat(
   onReasoning: ((reasoning: ReasoningMeta) => void) | undefined,
   onSources: ((sources: MockSource[]) => void) | undefined,
   onCitations: ((citations: Citation[]) => void) | undefined,
+  onAgentPhase: ((p: AgentPhaseSsePayload) => void) | undefined,
   chatApiPath: string,
 ): Promise<StreamChatResult> {
   let response = await fetch(chatApiPath, {
@@ -248,7 +277,8 @@ async function requestChat(
     onSuggestions,
     onReasoning,
     onSources,
-    onCitations
+    onCitations,
+    onAgentPhase,
   )
 
   return {
@@ -266,6 +296,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamChat
     onReasoning,
     onSources,
     onCitations,
+    onAgentPhase,
     onComplete,
     signal,
     chatApiPath = "/api/chat",
@@ -281,6 +312,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamChat
       onReasoning,
       onSources,
       onCitations,
+      onAgentPhase,
       chatApiPath,
     )
     onComplete?.(result)
@@ -303,6 +335,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamChat
       onReasoning,
       onSources,
       onCitations,
+      onAgentPhase,
       chatApiPath,
     )
     onComplete?.(result)

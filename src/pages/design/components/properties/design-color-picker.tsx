@@ -54,6 +54,8 @@ interface Props {
 
 export function DesignColorPicker({ value, onChange, label }: Props) {
   const [open, setOpen] = useState(false)
+  const safeValue = typeof value === "string" && value.trim().length > 0 ? value.trim() : "#000000"
+  const safeValueLower = safeValue.toLowerCase()
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -65,9 +67,9 @@ export function DesignColorPicker({ value, onChange, label }: Props) {
         >
           <span
             className="size-4 shrink-0 rounded-sm border border-black/10"
-            style={{ backgroundColor: value }}
+            style={{ backgroundColor: safeValue }}
           />
-          <span className="text-xs font-mono text-muted-foreground truncate">{value}</span>
+          <span className="text-xs font-mono text-muted-foreground truncate">{safeValue}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[220px] p-3 space-y-3">
@@ -82,7 +84,7 @@ export function DesignColorPicker({ value, onChange, label }: Props) {
               onClick={() => { onChange(s.hex); setOpen(false) }}
               className={cn(
                 "size-7 rounded border border-black/10 cursor-pointer transition-transform hover:scale-110 shrink-0",
-                value.toLowerCase() === s.hex.toLowerCase() &&
+                safeValueLower === s.hex.toLowerCase() &&
                   "ring-2 ring-primary ring-offset-1 ring-offset-background",
               )}
               style={{ backgroundColor: s.hex }}
@@ -93,7 +95,7 @@ export function DesignColorPicker({ value, onChange, label }: Props) {
           <span className="text-xs text-muted-foreground shrink-0">Custom</span>
           <input
             type="color"
-            value={value.startsWith("#") ? value : "#6366F1"}
+            value={safeValue.startsWith("#") ? safeValue : "#6366F1"}
             onChange={(e) => onChange(e.target.value)}
             className="h-7 flex-1 cursor-pointer rounded border border-input"
           />

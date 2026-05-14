@@ -31,5 +31,8 @@ export interface LlmChatRequest {
   sessionSummary?: string
   /** When set, `/api/chat` forwards Mistral `response_format` (design JSON only). */
   responseFormat?: "json_object"
+  /** Emits SSE `agent_phase` boundaries for design agent orchestration UI. */
+  designAgentPhase?: string
+  designAgentPhaseLabel?: string
 }
 
