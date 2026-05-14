@@ -5,7 +5,7 @@ import {
   MoreHorizontal,
   FileText,
   Database,
-  Layers2,
+  PencilRuler,
   MessageCircle,
   MessageSquarePlus,
   PanelLeftClose,
@@ -13,9 +13,7 @@ import {
   Pencil,
   PenLine,
   SlidersHorizontal,
-  Table2,
   Trash2,
-  Workflow,
 } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -125,8 +123,8 @@ type PageKey =
   | "new-chat"
   | "memory"
   | "knowledge"
-  | "smart-tables"
-  | "routines"
+  // | "smart-tables" // deferred — restore with SmartTablesPage + sidebar item
+  // | "routines" // deferred — restore with RoutinesPage + sidebar item
   | "playground"
   | "design"
 type IconType = React.ComponentType<{ className?: string }>
@@ -135,10 +133,10 @@ const workspaceItems: Array<{ label: string; key: PageKey; icon: IconType }> = [
   { label: "New Chat", key: "new-chat", icon: MessageSquarePlus },
   { label: "Memory", key: "memory", icon: Brain },
   { label: "Knowledge", key: "knowledge", icon: Database },
-  { label: "Smart Tables", key: "smart-tables", icon: Table2 },
-  { label: "Routines", key: "routines", icon: Workflow },
+  // { label: "Smart Tables", key: "smart-tables", icon: Table2 },
+  // { label: "Routines", key: "routines", icon: Workflow },
   { label: "Playground", key: "playground", icon: SlidersHorizontal },
-  { label: "Design", key: "design", icon: Layers2 },
+  { label: "Design", key: "design", icon: PencilRuler },
 ]
 
 function SidebarCollapseButton() {
@@ -199,6 +197,7 @@ function MetricsRow({ items }: { items: Array<{ label: string; value: string }> 
   )
 }
 
+/* Deferred: Smart Tables + Routines pages — uncomment types, sidebar items, imports (Table2, Workflow), and routes below when ready.
 function SmartTablesPage() {
   return (
     <div className="space-y-4">
@@ -284,6 +283,7 @@ function RoutinesPage() {
     </div>
   )
 }
+*/
 
 function ChatPage({
   thread,
@@ -1113,24 +1113,7 @@ export function App() {
               />
             </StandardPageShell>
           )}
-          {activePage === "smart-tables" && (
-            <StandardPageShell
-              title={currentLabel}
-              description="Structured data views and operations"
-              icon={Table2}
-            >
-              <SmartTablesPage />
-            </StandardPageShell>
-          )}
-          {activePage === "routines" && (
-            <StandardPageShell
-              title={currentLabel}
-              description="Automation health and schedules"
-              icon={Workflow}
-            >
-              <RoutinesPage />
-            </StandardPageShell>
-          )}
+          {/* Deferred: smart-tables + routines routes — see commented PageKey + SmartTablesPage / RoutinesPage above */}
           {activePage === "playground" && <PlaygroundPage />}
           {activePage === "design" && (
             <DesignPage onDocumentChange={handleDesignDocumentChange} />

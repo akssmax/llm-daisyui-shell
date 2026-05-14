@@ -112,27 +112,29 @@ export const useDesignStore = create<DesignState>()(
 
       applyPatches: (patches, opts) => {
         const shouldClearSelection = opts?.clearSelection ?? true
-        const current = get().document
+        const state0 = get()
+        const current = state0.document
         if (!current) return
+
+        let doc = current
+        let activePageId = state0.activePageId
+        for (const op of patches) {
+          doc = applyPatch(doc, op)
+          if (op.op === "create_page" && activePageId === null) {
+            activePageId = op.page.id
+          }
+        }
+        if (!doc.pages.find((p) => p.id === activePageId) && doc.pages.length > 0) {
+          activePageId = doc.pages[0].id
+        }
+
         set((state) => ({
           past: [...state.past.slice(-49), current],
           future: [],
+          document: doc,
+          activePageId,
           ...(shouldClearSelection ? { selection: { elementIds: [], pageId: null } } : {}),
         }))
-        let doc = current
-        for (const op of patches) {
-          doc = applyPatch(doc, op)
-          // Auto-set activePageId when a new page is created
-          if (op.op === "create_page" && get().activePageId === null) {
-            set({ activePageId: op.page.id })
-          }
-        }
-        set({ document: doc })
-        // Ensure activePageId is valid
-        const activeId = get().activePageId
-        if (!doc.pages.find((p) => p.id === activeId) && doc.pages.length > 0) {
-          set({ activePageId: doc.pages[0].id })
-        }
       },
 
       setActivePage: (pageId) => set({ activePageId: pageId, selection: { elementIds: [], pageId: null } }),

@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { Layers } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -17,10 +18,14 @@ export function LayersPanel() {
   )
 
   const page = document?.pages.find((p) => p.id === activePageId) ?? document?.pages[0]
+
+  const sorted = useMemo(() => {
+    if (!page) return []
+    return [...page.elements].sort((a, b) => b.zIndex - a.zIndex)
+  }, [page])
+
   if (!page) return null
   const pageId = page.id
-
-  const sorted = [...page.elements].sort((a, b) => b.zIndex - a.zIndex)
 
   function moveUp(idx: number) {
     const el = sorted[idx]

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { nanoid } from "nanoid"
 import type { FileUIPart } from "ai"
-import { AlertCircle, Brain, Check, Copy, Plus, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react"
+import { AlertCircle, Brain, Check, Copy, Plus, Shuffle, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import {
   Attachment,
@@ -114,6 +114,36 @@ export function DesignChatPanel() {
   const skipInitialChatResetEffect = useRef(true)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
 
+  const streamTraceFullRef = useRef("")
+  const streamTraceRafRef = useRef<number | null>(null)
+
+  const flushStreamTrace = useCallback(() => {
+    if (streamTraceRafRef.current != null) {
+      cancelAnimationFrame(streamTraceRafRef.current)
+      streamTraceRafRef.current = null
+    }
+    const full = streamTraceFullRef.current
+    setStreamTrace(full.length > MAX_TRACE_CHARS ? full.slice(-MAX_TRACE_CHARS) : full)
+  }, [])
+
+  const scheduleStreamTraceFlush = useCallback(() => {
+    if (streamTraceRafRef.current != null) return
+    streamTraceRafRef.current = requestAnimationFrame(() => {
+      streamTraceRafRef.current = null
+      const next = streamTraceFullRef.current
+      setStreamTrace(next.length > MAX_TRACE_CHARS ? next.slice(-MAX_TRACE_CHARS) : next)
+    })
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (streamTraceRafRef.current != null) {
+        cancelAnimationFrame(streamTraceRafRef.current)
+        streamTraceRafRef.current = null
+      }
+    }
+  }, [])
+
   const { setDocument, applyPatches, isAiLoading, setAiLoading, designChatModel, setDesignChatModel, designChatThreadNonce } =
     useDesignStore(
       useShallow((s) => ({
@@ -134,6 +164,11 @@ export function DesignChatPanel() {
     }
     abortRef.current?.abort()
     abortRef.current = null
+    if (streamTraceRafRef.current != null) {
+      cancelAnimationFrame(streamTraceRafRef.current)
+      streamTraceRafRef.current = null
+    }
+    streamTraceFullRef.current = ""
     setMessages([])
     setChatStatus("ready")
     setStreamTrace("")
@@ -183,6 +218,11 @@ export function DesignChatPanel() {
       setMessages((prev) => [...prev, userMsg, assistantMsg])
       setAiLoading(true)
       setChatStatus("streaming")
+      if (streamTraceRafRef.current != null) {
+        cancelAnimationFrame(streamTraceRafRef.current)
+        streamTraceRafRef.current = null
+      }
+      streamTraceFullRef.current = ""
       setStreamTrace("")
       setFollowUpSuggestions([])
       setCompletionNotice(null)
@@ -207,12 +247,11 @@ export function DesignChatPanel() {
           }
         },
         onToken: (token) => {
-          setStreamTrace((prev) => {
-            const next = prev + token
-            return next.length > MAX_TRACE_CHARS ? next.slice(-MAX_TRACE_CHARS) : next
-          })
+          streamTraceFullRef.current += token
+          scheduleStreamTraceFlush()
         },
         onComplete: (parsed, streamMeta: DesignAssistantStreamMeta) => {
+          flushStreamTrace()
           setAiLoading(false)
           setChatStatus("ready")
           if (parsed.kind === "document") {
@@ -242,6 +281,7 @@ export function DesignChatPanel() {
           }
         },
         onError: (errMsg) => {
+          flushStreamTrace()
           setAiLoading(false)
           setChatStatus("error")
           setMessages((prev) =>
@@ -252,7 +292,7 @@ export function DesignChatPanel() {
         },
       })
     },
-    [messages, isAiLoading, setDocument, applyPatches, setAiLoading],
+    [messages, isAiLoading, setDocument, applyPatches, setAiLoading, flushStreamTrace, scheduleStreamTraceFlush],
   )
 
   function handleSubmit(message: PromptInputMessage) {
@@ -264,6 +304,7 @@ export function DesignChatPanel() {
 
   function handleStop() {
     abortRef.current?.abort()
+    flushStreamTrace()
     setAiLoading(false)
     setChatStatus("ready")
     setMessages((prev) =>
@@ -295,13 +336,16 @@ export function DesignChatPanel() {
                     </button>
                   ))}
                 </div>
-                <button
+                <Button
                   type="button"
-                  className="mx-auto text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  variant="secondary"
+                  size="sm"
+                  className="mx-auto gap-1.5 rounded-lg text-xs"
                   onClick={() => setStarterSuggestions(pickRandomStarterPrompts())}
                 >
+                  <Shuffle className="size-3.5 shrink-0" aria-hidden />
                   Shuffle suggestions
-                </button>
+                </Button>
               </div>
             </ConversationEmptyState>
           ) : (

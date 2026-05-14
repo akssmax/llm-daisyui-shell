@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react"
 import { useShallow } from "zustand/react/shallow"
-import { useDesignStore } from "../../store/design-store"
+import { useDesignStore, type DesignViewport } from "../../store/design-store"
 import { DesignKonvaStage } from "../canvas-konva/design-konva-stage"
 import { DesignViewportBar } from "./design-viewport-bar"
 import { DesignSelectionBar } from "./design-selection-bar"
@@ -69,18 +69,45 @@ export const DesignCanvas = forwardRef<DesignCanvasHandle>((_, ref) => {
     return () => ro.disconnect()
   }, [syncStageSize])
 
+  const pendingViewportRef = useRef<Partial<DesignViewport>>({})
+  const viewportFlushRafRef = useRef<number | null>(null)
+
+  const scheduleViewportFlush = useCallback(() => {
+    if (viewportFlushRafRef.current != null) return
+    viewportFlushRafRef.current = requestAnimationFrame(() => {
+      viewportFlushRafRef.current = null
+      const p = pendingViewportRef.current
+      pendingViewportRef.current = {}
+      if (Object.keys(p).length > 0) setViewport(p)
+    })
+  }, [setViewport])
+
+  useEffect(() => {
+    return () => {
+      if (viewportFlushRafRef.current != null) {
+        cancelAnimationFrame(viewportFlushRafRef.current)
+        viewportFlushRafRef.current = null
+      }
+      const p = pendingViewportRef.current
+      pendingViewportRef.current = {}
+      if (Object.keys(p).length > 0) setViewport(p)
+    }
+  }, [setViewport])
+
   const handlePanChange = useCallback(
     (pan: { x: number; y: number }) => {
-      setViewport({ panX: pan.x, panY: pan.y })
+      pendingViewportRef.current = { ...pendingViewportRef.current, panX: pan.x, panY: pan.y }
+      scheduleViewportFlush()
     },
-    [setViewport],
+    [scheduleViewportFlush],
   )
 
   const handleViewportChange = useCallback(
     (partial: { panX: number; panY: number; userZoom: number }) => {
-      setViewport(partial)
+      pendingViewportRef.current = { ...pendingViewportRef.current, ...partial }
+      scheduleViewportFlush()
     },
-    [setViewport],
+    [scheduleViewportFlush],
   )
 
   if (!document || !activePage) {
