@@ -1,4 +1,5 @@
 import { Download, FileCode, FileText } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -16,6 +17,7 @@ interface Props {
 
 export function ExportMenu({ canvasRef }: Props) {
   const document = useDesignStore((s) => s.document)
+  const activePageId = useDesignStore((s) => s.activePageId)
   const canvasFitScale = useDesignStore((s) => s.canvasFitScale)
   const userZoom = useDesignStore((s) => s.viewport.userZoom)
 
@@ -28,9 +30,20 @@ export function ExportMenu({ canvasRef }: Props) {
 
   async function handlePdf() {
     if (!document || !canvasRef.current) return
+    // Defer until after the dropdown closes so Radix focus / layout does not race html2canvas.
+    await new Promise<void>((r) => setTimeout(r, 0))
     const el = canvasRef.current.getPageElement()
-    if (!el) return
-    await pdfExport(document, el, { fitScale: canvasFitScale, userZoom })
+    if (!el) {
+      toast.error("Canvas is not ready yet. Try again in a moment.")
+      return
+    }
+    try {
+      await pdfExport(document, el, { fitScale: canvasFitScale, userZoom, activePageId })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "PDF export failed."
+      toast.error(msg)
+      console.error(err)
+    }
   }
 
   return (
@@ -46,7 +59,7 @@ export function ExportMenu({ canvasRef }: Props) {
           <FileCode className="h-4 w-4" />
           Export as HTML
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={handlePdf} className="gap-2">
+        <DropdownMenuItem onClick={() => void handlePdf()} className="gap-2">
           <FileText className="h-4 w-4" />
           Export as PDF
         </DropdownMenuItem>

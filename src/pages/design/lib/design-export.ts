@@ -112,16 +112,45 @@ export function computeRasterExportPixelRatio(opts: {
 
 // ─── PDF Export ─────────────────────────────────────────────────────────────
 
+/** Konva (react-konva) renders into `.konvajs-content`; rasterizing that subtree is more reliable than the outer measure div alone. */
+function resolveHtml2CanvasTarget(root: HTMLElement): HTMLElement {
+  const inner = root.querySelector(".konvajs-content") as HTMLElement | null
+  return inner ?? root
+}
+
+function waitNextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve())
+    })
+  })
+}
+
 export async function pdfExport(
   doc: DesignDocument,
   pageElement: HTMLElement,
-  rasterOpts?: { fitScale: number; userZoom: number },
+  rasterOpts?: { fitScale: number; userZoom: number; activePageId?: string | null },
 ): Promise<void> {
-  const { default: jsPDF } = await import("jspdf")
+  const jsPDFModule = await import("jspdf")
+  const JsPDF = (jsPDFModule as { default?: typeof import("jspdf").default; jsPDF?: typeof import("jspdf").default })
+    .default ?? (jsPDFModule as { jsPDF?: typeof import("jspdf").default }).jsPDF
+  if (!JsPDF) {
+    throw new Error("Could not load jsPDF (missing default export).")
+  }
+
   const { default: html2canvas } = await import("html2canvas")
 
-  const firstPage = doc.pages[0]
-  if (!firstPage) return
+  const exportPage =
+    (rasterOpts?.activePageId ? doc.pages.find((p) => p.id === rasterOpts.activePageId) : undefined) ??
+    doc.pages[0]
+  if (!exportPage) return
+
+  await waitNextPaint()
+  if (typeof document !== "undefined" && document.fonts?.ready) {
+    await document.fonts.ready.catch(() => {})
+  }
+
+  const target = resolveHtml2CanvasTarget(pageElement)
 
   const dpr =
     typeof globalThis !== "undefined" && "devicePixelRatio" in globalThis
@@ -133,28 +162,45 @@ export async function pdfExport(
     userZoom: rasterOpts?.userZoom ?? 1,
   })
 
-  const pdf = new jsPDF({
-    orientation: firstPage.width > firstPage.height ? "landscape" : "portrait",
+  const pdf = new JsPDF({
+    orientation: exportPage.width > exportPage.height ? "landscape" : "portrait",
     unit: "px",
-    format: [firstPage.width, firstPage.height],
+    format: [exportPage.width, exportPage.height],
     compress: true,
   })
 
-  // Export the currently visible page element
-  const canvas = await html2canvas(pageElement, {
+  const canvas = await html2canvas(target, {
     scale,
     useCORS: true,
-    backgroundColor: null,
+    allowTaint: false,
+    foreignObjectRendering: false,
+    backgroundColor: "#ffffff",
     logging: false,
   })
 
-  const imgData = canvas.toDataURL("image/jpeg", 0.92)
-  pdf.addImage(imgData, "JPEG", 0, 0, firstPage.width, firstPage.height)
+  let imgData: string
+  let imgFormat: "JPEG" | "PNG" = "JPEG"
+  try {
+    imgData = canvas.toDataURL("image/jpeg", 0.92)
+  } catch {
+    try {
+      imgData = canvas.toDataURL("image/png")
+      imgFormat = "PNG"
+    } catch {
+      throw new Error(
+        "Could not read the canvas as an image. If the design uses photos from the web, try replacing them with uploaded images (cross-origin images block export).",
+      )
+    }
+  }
 
-  // For multi-page docs, note that switching pages requires re-render
-  // (the user can export page by page for now; full multi-page PDF is a future enhancement)
+  const pageW = pdf.internal.pageSize.getWidth()
+  const pageH = pdf.internal.pageSize.getHeight()
+  pdf.addImage(imgData, imgFormat, 0, 0, pageW, pageH, undefined, "FAST")
+
   if (doc.pages.length > 1) {
-    console.info(`Note: PDF export captured 1 of ${doc.pages.length} pages. Navigate to each page and export separately for full multi-page PDF.`)
+    console.info(
+      `Note: PDF export captured the active canvas (1 of ${doc.pages.length} pages). Switch pages and export again for each slide.`,
+    )
   }
 
   pdf.save(`${doc.title.replace(/\s+/g, "-")}.pdf`)
