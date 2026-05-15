@@ -436,8 +436,7 @@ export async function runDesignAgentTurnV2(
     return { response: composed, phases, debugBundle }
   }
 
-  const assistantNote =
-    composed.kind !== "message" && composed.assistantNote ? composed.assistantNote : undefined
+  const assistantNote = composed.assistantNote
 
   if (shouldApplyCanvasSpecToDocument(workingDoc, canvasSpec, userContent, intentPlan)) {
     workingDoc = applyCanvasSpecToDocument(workingDoc, canvasSpec)
@@ -500,13 +499,10 @@ export async function runDesignAgentTurnV2(
     merged = mergeRepair(merged, repaired)
     if (merged.kind === "document") {
       workingDoc = merged.document
-    } else if (merged.kind === "patches") {
-      const patchBase =
-        merged.kind === "patches" && workingDoc
-          ? applyPatchesToDocument(workingDoc, merged.patches)
-          : workingDoc
-      if (patchBase) workingDoc = patchBase
+    } else if (merged.kind === "patches" && workingDoc) {
+      workingDoc = applyPatchesToDocument(workingDoc, merged.patches)
     }
+    if (!workingDoc) break
     validation = validateDesignDocument(workingDoc, { safeMargin: margin })
     debugBundle[`validationAfterRepair${repairRound}`] = validation
     if (validation.valid) break
