@@ -16,10 +16,13 @@ import {
   parseIntentPlan,
   parseJsonObjectFromModel,
   parseLayoutTree,
+  parseTailwindThemeFromDesignSystem,
   type DesignTokenBundle,
   type IntentPlanPayload,
   type LayoutTree,
 } from "./design-agent-schemas"
+import { tokenPresetToBundle } from "./layout-intelligence/layout-catalog"
+import { buildTailwindTokenBundle } from "./layout-intelligence/tailwind-theme-builder"
 import {
   assembleDocumentFromElements,
   assembleDocumentFromRegionContents,
@@ -266,7 +269,19 @@ export async function runDesignAgentTurn(opts: RunDesignAgentTurnOptions): Promi
   })
   debugBundle.designSystemRaw = dsRaw.raw
   const dsParsed = parseJsonObjectFromModel(dsRaw.raw)
-  const tokens = dsParsed ? parseDesignSystem(dsParsed) : null
+  let tokens: DesignTokenBundle | null = dsParsed ? parseDesignSystem(dsParsed) : null
+  if (!tokens && dsParsed) {
+    const themeSel = parseTailwindThemeFromDesignSystem(dsParsed)
+    const tw = buildTailwindTokenBundle({
+      accentHue: themeSel?.accentHue ?? "indigo",
+      mode: themeSel?.mode ?? "light",
+    })
+    tokens = tokenPresetToBundle(tw) as DesignTokenBundle
+    debugBundle.tailwindTheme = {
+      accentHue: themeSel?.accentHue ?? "indigo",
+      mode: themeSel?.mode ?? "light",
+    }
+  }
   if (!tokens) {
     const err: DesignAgentPhaseTrace = { ...dsRaw.trace, state: "error", summary: "Invalid designSystem JSON" }
     if (phases.length > 0) phases[phases.length - 1] = err

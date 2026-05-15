@@ -18,6 +18,7 @@ import {
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation"
 import { Message, MessageAction, MessageActions, MessageContent } from "@/components/ai-elements/message"
+import { MarkdownRenderer } from "@/components/chat/markdown-renderer"
 import {
   InlineCitation,
   InlineCitationCard,
@@ -404,7 +405,9 @@ export function DesignChatPanel() {
                 <Message key={msg.id} from={msg.role}>
                   {msg.role === "user" ? (
                     <div className="space-y-2">
-                      <MessageContent>{msg.content}</MessageContent>
+                      <MessageContent>
+                        <MarkdownRenderer markdown={msg.content} className="w-full !max-w-none" />
+                      </MessageContent>
                       {(msg.attachments?.length ?? 0) > 0 ? (
                         <Attachments variant="inline" className="w-full flex-wrap justify-start">
                           {msg.attachments!.map((file) => (
@@ -466,7 +469,9 @@ export function DesignChatPanel() {
                           streamTrace=""
                         />
                       ) : null}
-                      <MessageContent>{msg.content}</MessageContent>
+                      <MessageContent>
+                        <MarkdownRenderer markdown={msg.content} className="w-full !max-w-none" />
+                      </MessageContent>
                       {((msg.citations?.length ?? 0) > 0 || (msg.sources?.length ?? 0) > 0) ? (
                         <InlineCitation>
                           {(msg.citations ?? []).map((c) => (

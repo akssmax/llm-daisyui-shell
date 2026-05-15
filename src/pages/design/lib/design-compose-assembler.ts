@@ -2,8 +2,8 @@ import { nanoid } from "nanoid"
 import type { DesignDocument, DesignElement, Theme } from "../types"
 import type { DesignTokenBundle, IntentPlanPayload, LayoutRegion, LayoutTree } from "./design-agent-schemas"
 import { coerceElement, tryParseDesignCandidate } from "./design-json-parser"
-import { parseJsonObjectFromModel } from "./design-agent-schemas"
-import { normalizeIconName } from "./lucide-icon-registry"
+import { parseContentMap, parseJsonObjectFromModel } from "./design-agent-schemas"
+import { extractIconNameFromText, normalizeIconName } from "./lucide-icon-registry"
 
 const PAGE_W = 1080
 const PAGE_H = 1080
@@ -134,9 +134,11 @@ export function assembleDocumentFromRegionContents(
     const role = region.role.toLowerCase()
     const isIconRegion = role === "icon" || rc?.kind === "icon"
 
-    if (isIconRegion) {
+    const iconFromText = rc?.content ? extractIconNameFromText(rc.content) : null
+
+    if (isIconRegion || iconFromText) {
       const rawName = rc?.iconName ?? rc?.content ?? ""
-      const iconName = normalizeIconName(rawName)
+      const iconName = isIconRegion ? normalizeIconName(rawName) : iconFromText
       if (!iconName) continue
       const iconSize = snap8(Math.min(box.width, box.height, 64))
       const accent = tokens.tokens.colors.accent ?? tokens.tokens.colors.textPrimary ?? "#4F46E5"
@@ -255,26 +257,8 @@ export function parseRegionContentsCompose(raw: string): RegionContent[] | null 
     // ignore
   }
   for (const obj of candidates) {
-    const arr = obj.regionContents ?? (obj.kind === "region_contents" ? obj.regionContents : null)
-    if (!Array.isArray(arr)) continue
-    const out: RegionContent[] = []
-    for (const item of arr) {
-      if (!item || typeof item !== "object") continue
-      const r = item as Record<string, unknown>
-      const regionId = typeof r.regionId === "string" ? r.regionId : typeof r.id === "string" ? r.id : ""
-      const content = typeof r.content === "string" ? r.content : typeof r.text === "string" ? r.text : ""
-      if (!regionId || !content.trim()) continue
-      out.push({
-        regionId,
-        content: content.trim(),
-        ...(typeof r.fontSize === "number" ? { fontSize: r.fontSize } : {}),
-        ...(typeof r.fontWeight === "string" ? { fontWeight: r.fontWeight } : {}),
-        ...(r.textAlign === "left" || r.textAlign === "center" || r.textAlign === "right"
-          ? { textAlign: r.textAlign }
-          : {}),
-      })
-    }
-    if (out.length > 0) return out
+    const parsed = parseContentMap(obj)
+    if (parsed) return parsed as RegionContent[]
   }
   return null
 }

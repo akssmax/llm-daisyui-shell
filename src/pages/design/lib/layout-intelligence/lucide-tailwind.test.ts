@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { assembleDocumentFromRegionContents } from "../design-compose-assembler"
 import { parseIntentPlan } from "../design-agent-schemas"
-import { normalizeIconName } from "../lucide-icon-registry"
+import { extractIconNameFromText, normalizeIconName } from "../lucide-icon-registry"
 import { pickStylePresetForIntent } from "./style-auto-pick"
 import {
   buildTailwindTokenBundle,
@@ -14,6 +14,11 @@ describe("lucide icon registry", () => {
     expect(normalizeIconName("arrow-right")).toBe("arrow-right")
     expect(normalizeIconName("arrowRight")).toBe("arrow-right")
     expect(normalizeIconName("not-a-real-icon-xyz")).toBeNull()
+  })
+
+  it("extracts icon name from malformed model text", () => {
+    expect(extractIconNameFromText("icon: sparkles | iconName: rocket")).toBe("rocket")
+    expect(extractIconNameFromText("iconName: sparkles")).toBe("sparkles")
   })
 })
 

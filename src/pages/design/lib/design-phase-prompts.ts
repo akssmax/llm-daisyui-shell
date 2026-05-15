@@ -343,8 +343,14 @@ export function buildComposeElementsOnlyPrompt(
 export function buildComposeHybridPrompt(
   bundle: { intentPlan: IntentPlanPayload; tokens: DesignTokenBundle; layout: LayoutTree },
 ): string {
+  const iconList = lucideAllowlistForPrompt()
   const regionSpec = bundle.layout.regions
-    .map((r) => `{ "regionId": "${r.id}", "content": "<${r.role} text>" }`)
+    .map((r) => {
+      if (r.role === "icon") {
+        return `{ "regionId": "${r.id}", "kind": "icon", "iconName": "<kebab-case from allowlist>" }`
+      }
+      return `{ "regionId": "${r.id}", "content": "<${r.role} text>" }`
+    })
     .join(",\n  ")
   return [
     JSON_ONLY,
@@ -355,6 +361,9 @@ export function buildComposeHybridPrompt(
     '  "assistantNote": string }',
     "",
     "Write real copy for each regionId from the user request. One string per region.",
+    "For icon regions: use kind icon + iconName from allowlist — never put icon metadata in content strings.",
+    `Icon allowlist: ${iconList}`,
+    "Replace emojis with icons when the user asks (e.g. rocket, sparkles, arrow-right).",
     `Fonts: heading=${bundle.tokens.tokens.headingFont}, body=${bundle.tokens.tokens.bodyFont}`,
     `Tone: ${bundle.intentPlan.intent.tone}`,
     "",

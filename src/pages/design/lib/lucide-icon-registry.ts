@@ -97,6 +97,30 @@ export function normalizeIconName(name: string): LucideIconName | null {
   return null
 }
 
+/** Recover icon name when the model put metadata in a text field (e.g. "icon: sparkles | iconName: rocket"). */
+export function extractIconNameFromText(content: string): LucideIconName | null {
+  const trimmed = content.trim()
+  if (!trimmed) return null
+
+  const iconNameMatch = trimmed.match(/iconName\s*:\s*["']?([a-zA-Z0-9-]+)/i)
+  if (iconNameMatch) {
+    const normalized = normalizeIconName(iconNameMatch[1])
+    if (normalized) return normalized
+  }
+
+  const iconMatch = trimmed.match(/\bicon\s*:\s*["']?([a-zA-Z0-9-]+)/i)
+  if (iconMatch) {
+    const normalized = normalizeIconName(iconMatch[1])
+    if (normalized) return normalized
+  }
+
+  if (!/[:|]/.test(trimmed) && !/\s/.test(trimmed)) {
+    return normalizeIconName(trimmed)
+  }
+
+  return null
+}
+
 export function getLucideIconNode(name: string): IconNode[] | null {
   const normalized = normalizeIconName(name)
   if (!normalized) return null

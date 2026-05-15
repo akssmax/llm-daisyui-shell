@@ -24,6 +24,7 @@ import {
   InlineCitationSource,
 } from "@/components/ai-elements/inline-citation"
 
+import { MarkdownRenderer } from "@/components/chat/markdown-renderer"
 import { getMessageText } from "@/lib/chat-message-utils"
 import type { MockChatItem } from "@/lib/mock-chat-data"
 
@@ -62,7 +63,9 @@ function ChatMessageRowInner({
         </Attachments>
       ) : null}
 
-      <MessageContent>{getMessageText(msg)}</MessageContent>
+      <MessageContent>
+        <MarkdownRenderer markdown={getMessageText(msg)} className="w-full !max-w-none" />
+      </MessageContent>
 
       {meta?.citations?.length ? (
         <InlineCitation>

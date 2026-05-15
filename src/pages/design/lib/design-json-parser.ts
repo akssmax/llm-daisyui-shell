@@ -1,6 +1,7 @@
 import { jsonrepair } from "jsonrepair"
 import { nanoid } from "nanoid"
 import type { DesignAiResponse, DesignDocument, DesignElement, DocumentType, PatchOp, ShapeKind, Theme } from "../types"
+import { extractIconNameFromText, normalizeIconName } from "./lucide-icon-registry"
 
 /** User-visible fallback when the model output is not valid design JSON (avoid Cursor-like generic copy). */
 export const DESIGN_MODEL_PARSE_FAILED_MESSAGE =
@@ -133,11 +134,21 @@ export function coerceElement(raw: unknown, index: number): DesignElement | null
   }
 
   if (kind === "text") {
+    const rawText = str(e.content ?? e.text ?? e.label ?? e.value, "Text")
+    const iconFromText = extractIconNameFromText(rawText)
+    if (iconFromText) {
+      return {
+        ...base,
+        kind: "icon",
+        iconName: iconFromText,
+        color: str(e.color ?? e.fill ?? e.textColor, "#000000"),
+      }
+    }
     const align = TEXT_ALIGNS.has(str(e.textAlign ?? e.align, "")) ? str(e.textAlign ?? e.align, "") as "left" | "center" | "right" : "left"
     return {
       ...base,
       kind: "text",
-      content: str(e.content ?? e.text ?? e.label ?? e.value, "Text"),
+      content: rawText,
       fontFamily: str(e.fontFamily ?? e.font, DEFAULT_THEME.fontFamily),
       fontSize: num(e.fontSize ?? e.size, 24),
       fontWeight: str(e.fontWeight ?? e.weight, "normal"),
@@ -172,10 +183,12 @@ export function coerceElement(raw: unknown, index: number): DesignElement | null
   }
 
   if (kind === "icon") {
+    const rawIcon = str(e.iconName ?? e.icon ?? e.name, "star")
+    const iconName = normalizeIconName(rawIcon) ?? extractIconNameFromText(rawIcon) ?? "star"
     return {
       ...base,
       kind: "icon",
-      iconName: str(e.iconName ?? e.icon ?? e.name, "star"),
+      iconName,
       color: str(e.color ?? e.fill, "#000000"),
     }
   }
