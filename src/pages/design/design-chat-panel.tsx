@@ -239,7 +239,16 @@ export function DesignChatPanel() {
         id: nanoid(),
         role: "user",
         content: displayText,
-        ...(hasFiles ? { attachments: files.map((f) => ({ ...f })) } : {}),
+        ...(hasFiles
+          ? {
+              attachments: files.map((f) => ({
+                ...f,
+                id: typeof (f as FileUIPart & { id?: string }).id === "string"
+                  ? (f as FileUIPart & { id: string }).id
+                  : nanoid(),
+              })),
+            }
+          : {}),
       }
       const assistantId = nanoid()
       const assistantMsg: DesignChatMessage = {

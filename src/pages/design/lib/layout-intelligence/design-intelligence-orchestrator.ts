@@ -23,7 +23,6 @@ import type { RunDesignAgentTurnOptions } from "../design-agent-orchestrator"
 import { runJsonPhase } from "../design-agent-orchestrator-helpers"
 import {
   getLayoutById,
-  getStylePresetById,
   getTokenPresetById,
   layoutPatternToLayoutTree,
   tokenPresetToBundle,
@@ -39,7 +38,7 @@ import {
   pageDimensionsForIntent,
 } from "./slide-utils"
 import { pickStylePresetForIntent } from "./style-auto-pick"
-import { buildTailwindTokenBundle } from "./tailwind-theme-builder"
+import { buildTailwindTokenBundle, normalizeAccentHue, normalizeThemeMode } from "./tailwind-theme-builder"
 import type { DesignTokensPreset } from "./types"
 import {
   assembleDocumentFromRegionContents,
@@ -239,18 +238,14 @@ export async function runIntelligenceAgentTurn(
     })
     const dsObj = parseJsonObjectFromModel(dsRaw.raw)
     const themeSel = parseTailwindThemeFromDesignSystem(dsObj)
-    const tw = buildTailwindTokenBundle({
-      accentHue: themeSel?.accentHue ?? "indigo",
-      mode: themeSel?.mode ?? "light",
-    })
+    const accentHue = normalizeAccentHue(themeSel?.accentHue)
+    const mode = normalizeThemeMode(themeSel?.mode)
+    const tw = buildTailwindTokenBundle({ accentHue, mode })
     tokens = tokenPresetToBundle(tw) as DesignTokenBundle
     tokenPresetId = undefined
     activeTokenPreset = tw
     enforceTailwindOnly = true
-    debugBundle.tailwindTheme = {
-      accentHue: themeSel?.accentHue ?? "indigo",
-      mode: themeSel?.mode ?? "light",
-    }
+    debugBundle.tailwindTheme = { accentHue, mode }
     pushPhase({
       id: "design_system",
       label: "Design tokens",

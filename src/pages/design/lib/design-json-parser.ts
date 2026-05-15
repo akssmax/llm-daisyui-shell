@@ -98,8 +98,8 @@ function normalizeKindString(raw: unknown): string | null {
 
 function normalizeShapeKind(raw: unknown): ShapeKind {
   if (typeof raw === "string") {
-    const lower = raw.trim().toLowerCase() as ShapeKind
-    if (VALID_SHAPES.includes(lower)) return lower
+    const lower = raw.trim().toLowerCase()
+    if ((VALID_SHAPES as readonly string[]).includes(lower)) return lower as ShapeKind
     if (lower === "rect" || lower === "box" || lower === "square") return "rectangle"
     if (lower === "circle" || lower === "oval") return "ellipse"
   }

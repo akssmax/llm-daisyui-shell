@@ -22,7 +22,11 @@ import {
   type LayoutTree,
 } from "./design-agent-schemas"
 import { tokenPresetToBundle } from "./layout-intelligence/layout-catalog"
-import { buildTailwindTokenBundle } from "./layout-intelligence/tailwind-theme-builder"
+import {
+  buildTailwindTokenBundle,
+  normalizeAccentHue,
+  normalizeThemeMode,
+} from "./layout-intelligence/tailwind-theme-builder"
 import {
   assembleDocumentFromElements,
   assembleDocumentFromRegionContents,
@@ -272,15 +276,11 @@ export async function runDesignAgentTurn(opts: RunDesignAgentTurnOptions): Promi
   let tokens: DesignTokenBundle | null = dsParsed ? parseDesignSystem(dsParsed) : null
   if (!tokens && dsParsed) {
     const themeSel = parseTailwindThemeFromDesignSystem(dsParsed)
-    const tw = buildTailwindTokenBundle({
-      accentHue: themeSel?.accentHue ?? "indigo",
-      mode: themeSel?.mode ?? "light",
-    })
+    const accentHue = normalizeAccentHue(themeSel?.accentHue)
+    const mode = normalizeThemeMode(themeSel?.mode)
+    const tw = buildTailwindTokenBundle({ accentHue, mode })
     tokens = tokenPresetToBundle(tw) as DesignTokenBundle
-    debugBundle.tailwindTheme = {
-      accentHue: themeSel?.accentHue ?? "indigo",
-      mode: themeSel?.mode ?? "light",
-    }
+    debugBundle.tailwindTheme = { accentHue, mode }
   }
   if (!tokens) {
     const err: DesignAgentPhaseTrace = { ...dsRaw.trace, state: "error", summary: "Invalid designSystem JSON" }

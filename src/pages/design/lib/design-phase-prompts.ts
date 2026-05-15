@@ -240,7 +240,6 @@ export function buildComposePhaseSystemPrompt(
   const slim = includeDoc ? buildSlimDocumentContextForAgent(document, docMax) : "Omitted to save output tokens — use semantic bundle only."
   const summary = summarizeSemanticBundle(bundle.intentPlan, bundle.tokens, bundle.layout)
   const pageIds = document?.pages.map((p, i) => `pages[${i}].id="${p.id}"`) ?? []
-  const pageId = document?.pages[0]?.id
   const multiSlideRules = document && document.pages.length > 0
     ? [
         "MULTI-SLIDE RULES (critical):",

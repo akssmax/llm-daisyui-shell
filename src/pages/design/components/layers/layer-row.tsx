@@ -21,11 +21,16 @@ const kindIconMap: Record<string, React.ComponentType<{ className?: string }>> =
 }
 
 function elementLabel(el: DesignElement): string {
-  if (el.kind === "text") return (typeof el.content === "string" ? el.content : "").slice(0, 20) || "Text"
-  if (el.kind === "image") return "Image"
-  if (el.kind === "shape") return shapeToolLabel(el.shape ?? "rectangle")
-  if (el.kind === "icon") return typeof el.iconName === "string" ? el.iconName : "Icon"
-  return typeof el.kind === "string" && el.kind ? el.kind : "Element"
+  switch (el.kind) {
+    case "text":
+      return (typeof el.content === "string" ? el.content : "").slice(0, 20) || "Text"
+    case "image":
+      return "Image"
+    case "shape":
+      return shapeToolLabel(el.shape ?? "rectangle")
+    case "icon":
+      return typeof el.iconName === "string" ? el.iconName : "Icon"
+  }
 }
 
 export function LayerRow({ element, isSelected, isFirst, isLast, onSelect, onMoveUp, onMoveDown }: Props) {

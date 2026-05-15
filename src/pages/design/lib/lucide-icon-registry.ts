@@ -121,7 +121,7 @@ export function extractIconNameFromText(content: string): LucideIconName | null 
   return null
 }
 
-export function getLucideIconNode(name: string): IconNode[] | null {
+export function getLucideIconNode(name: string): IconNode | null {
   const normalized = normalizeIconName(name)
   if (!normalized) return null
   const pascal = iconNameToPascal(normalized)
@@ -142,66 +142,65 @@ export type IconPathSpec = {
   strokeLinejoin?: string
 }
 
-/** Flatten Lucide IconNode tree into SVG path specs for Konva / canvas export. */
-export function collectIconPathSpecs(iconNode: IconNode[]): IconPathSpec[] {
+function attrString(value: string | number | undefined): string | undefined {
+  if (value === undefined) return undefined
+  return String(value)
+}
+
+/** Flatten Lucide icon nodes into SVG path specs for Konva / canvas export. */
+export function collectIconPathSpecs(iconNode: IconNode): IconPathSpec[] {
   const out: IconPathSpec[] = []
 
-  function walk(nodes: IconNode[]) {
-    for (const node of nodes) {
-      if (!Array.isArray(node)) continue
-      const [tag, attrs, children] = node
-      if (tag === "path" && attrs && typeof attrs.d === "string") {
-        out.push({
-          d: attrs.d,
-          fill: attrs.fill,
-          stroke: attrs.stroke,
-          strokeWidth: attrs.strokeWidth ? Number(attrs.strokeWidth) : undefined,
-          strokeLinecap: attrs.strokeLinecap,
-          strokeLinejoin: attrs.strokeLinejoin,
-        })
-      }
-      if (tag === "circle" && attrs) {
-        const cx = Number(attrs.cx ?? 12)
-        const cy = Number(attrs.cy ?? 12)
-        const r = Number(attrs.r ?? 0)
-        out.push({
-          d: `M ${cx - r} ${cy} a ${r} ${r} 0 1 0 ${r * 2} 0 a ${r} ${r} 0 1 0 -${r * 2} 0`,
-          fill: attrs.fill,
-          stroke: attrs.stroke,
-          strokeWidth: attrs.strokeWidth ? Number(attrs.strokeWidth) : undefined,
-        })
-      }
-      if (tag === "line" && attrs) {
-        const x1 = attrs.x1 ?? "0"
-        const y1 = attrs.y1 ?? "0"
-        const x2 = attrs.x2 ?? "0"
-        const y2 = attrs.y2 ?? "0"
-        out.push({
-          d: `M ${x1} ${y1} L ${x2} ${y2}`,
-          stroke: attrs.stroke,
-          strokeWidth: attrs.strokeWidth ? Number(attrs.strokeWidth) : undefined,
-          strokeLinecap: attrs.strokeLinecap,
-        })
-      }
-      if (tag === "polyline" && attrs && typeof attrs.points === "string") {
-        const pts = attrs.points.trim().split(/\s+/).map(Number)
-        if (pts.length >= 4) {
-          let d = `M ${pts[0]} ${pts[1]}`
-          for (let i = 2; i < pts.length; i += 2) {
-            d += ` L ${pts[i]} ${pts[i + 1]}`
-          }
-          out.push({
-            d,
-            fill: attrs.fill,
-            stroke: attrs.stroke,
-            strokeWidth: attrs.strokeWidth ? Number(attrs.strokeWidth) : undefined,
-          })
+  for (const [tag, attrs] of iconNode) {
+    if (tag === "path" && typeof attrs.d === "string") {
+      out.push({
+        d: attrs.d,
+        fill: attrString(attrs.fill),
+        stroke: attrString(attrs.stroke),
+        strokeWidth: attrs.strokeWidth ? Number(attrs.strokeWidth) : undefined,
+        strokeLinecap: attrString(attrs.strokeLinecap),
+        strokeLinejoin: attrString(attrs.strokeLinejoin),
+      })
+    }
+    if (tag === "circle") {
+      const cx = Number(attrs.cx ?? 12)
+      const cy = Number(attrs.cy ?? 12)
+      const r = Number(attrs.r ?? 0)
+      out.push({
+        d: `M ${cx - r} ${cy} a ${r} ${r} 0 1 0 ${r * 2} 0 a ${r} ${r} 0 1 0 -${r * 2} 0`,
+        fill: attrString(attrs.fill),
+        stroke: attrString(attrs.stroke),
+        strokeWidth: attrs.strokeWidth ? Number(attrs.strokeWidth) : undefined,
+      })
+    }
+    if (tag === "line") {
+      const x1 = attrs.x1 ?? "0"
+      const y1 = attrs.y1 ?? "0"
+      const x2 = attrs.x2 ?? "0"
+      const y2 = attrs.y2 ?? "0"
+      out.push({
+        d: `M ${x1} ${y1} L ${x2} ${y2}`,
+        stroke: attrString(attrs.stroke),
+        strokeWidth: attrs.strokeWidth ? Number(attrs.strokeWidth) : undefined,
+        strokeLinecap: attrString(attrs.strokeLinecap),
+      })
+    }
+    if (tag === "polyline" && typeof attrs.points === "string") {
+      const pts = attrs.points.trim().split(/\s+/).map(Number)
+      if (pts.length >= 4) {
+        let d = `M ${pts[0]} ${pts[1]}`
+        for (let i = 2; i < pts.length; i += 2) {
+          d += ` L ${pts[i]} ${pts[i + 1]}`
         }
+        out.push({
+          d,
+          fill: attrString(attrs.fill),
+          stroke: attrString(attrs.stroke),
+          strokeWidth: attrs.strokeWidth ? Number(attrs.strokeWidth) : undefined,
+        })
       }
-      if (Array.isArray(children)) walk(children)
     }
   }
 
-  walk(iconNode)
   return out
 }
