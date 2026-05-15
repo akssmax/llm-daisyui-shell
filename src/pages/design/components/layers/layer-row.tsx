@@ -30,6 +30,8 @@ function elementLabel(el: DesignElement): string {
       return shapeToolLabel(el.shape ?? "rectangle")
     case "icon":
       return typeof el.iconName === "string" ? el.iconName : "Icon"
+    case "silhouette":
+      return typeof el.shapeName === "string" ? el.shapeName : "Silhouette"
   }
 }
 

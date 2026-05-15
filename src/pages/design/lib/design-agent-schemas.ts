@@ -1,4 +1,6 @@
 import { collectDesignJsonCandidates } from "./design-json-parser"
+import { extractSilhouetteFromText, normalizeSilhouetteName } from "./agent-silhouette-registry"
+import { extractIconNameFromText } from "./lucide-icon-registry"
 import {
   normalizeAccentHue,
   normalizeThemeMode,
@@ -28,6 +30,13 @@ export type DesignIntent = {
   audience: string
 }
 
+export type CanvasPlan = {
+  width: number
+  height: number
+  format: string
+  documentType: string
+}
+
 export type DesignPlan = {
   layoutType: string
   visualHierarchy: string[]
@@ -35,6 +44,8 @@ export type DesignPlan = {
   spacingStrategy: { baseUnit: number; sectionGap: number }
   /** Number of slides/pages for carousels and decks (default 1). */
   slideCount?: number
+  /** Target artboard size — required when user wants resume, A4, email, poster, etc. */
+  canvas?: CanvasPlan
 }
 
 export type DesignTokenBundle = {
@@ -48,14 +59,31 @@ export type DesignTokenBundle = {
   }
 }
 
+export type RegionImportance = "primary" | "secondary" | "tertiary"
+export type RegionAlignment = "left" | "center" | "right"
+
 export type LayoutRegion = {
   id: string
   role: string
   relativeRect: { x: number; y: number; w: number; h: number }
+  alignment?: RegionAlignment
+  importance?: RegionImportance
+  iconHint?: string
 }
 
 export type LayoutTree = {
   regions: LayoutRegion[]
+  constraints?: import("./layout-intelligence/types").LayoutConstraints
+}
+
+export type ContentStructure = {
+  headline?: string
+  subheading?: string
+  body?: string
+  cta?: string
+  stats?: string[]
+  quote?: string
+  tone?: string
 }
 
 export type IntentPlanPayload = {
@@ -103,6 +131,20 @@ export function parseIntentPlan(obj: unknown): IntentPlanPayload | null {
   const slideCount =
     typeof p.slideCount === "number" && p.slideCount >= 1 ? Math.round(p.slideCount) : undefined
 
+  let canvas: CanvasPlan | undefined
+  const canvasRaw = p.canvas
+  if (canvasRaw && typeof canvasRaw === "object") {
+    const c = canvasRaw as Record<string, unknown>
+    const width = typeof c.width === "number" ? c.width : undefined
+    const height = typeof c.height === "number" ? c.height : undefined
+    const format = typeof c.format === "string" ? c.format.trim() : "custom"
+    const documentType =
+      typeof c.documentType === "string" ? c.documentType.trim() : "document"
+    if (width && height) {
+      canvas = { width, height, format, documentType }
+    }
+  }
+
   return {
     intent: {
       designType: i.designType.trim(),
@@ -118,6 +160,7 @@ export function parseIntentPlan(obj: unknown): IntentPlanPayload | null {
       grid: { columns: g.columns, safeMargin: g.safeMargin },
       spacingStrategy: { baseUnit: s.baseUnit, sectionGap: s.sectionGap },
       ...(slideCount !== undefined ? { slideCount } : {}),
+      ...(canvas ? { canvas } : {}),
     },
   }
 }
@@ -181,6 +224,26 @@ export function parseDesignSystem(obj: unknown): DesignTokenBundle | null {
   }
 }
 
+export function parseContentStructure(obj: unknown): ContentStructure | null {
+  if (!obj || typeof obj !== "object") return null
+  const r = obj as Record<string, unknown>
+  const structure = r.contentStructure ?? r.structure ?? r
+  if (!structure || typeof structure !== "object") return null
+  const s = structure as Record<string, unknown>
+  const out: ContentStructure = {}
+  if (isNonEmptyString(s.headline)) out.headline = s.headline.trim()
+  if (isNonEmptyString(s.subheading)) out.subheading = s.subheading.trim()
+  if (isNonEmptyString(s.body)) out.body = s.body.trim()
+  if (isNonEmptyString(s.cta)) out.cta = s.cta.trim()
+  if (isNonEmptyString(s.quote)) out.quote = s.quote.trim()
+  if (isNonEmptyString(s.tone)) out.tone = s.tone.trim()
+  if (Array.isArray(s.stats)) {
+    out.stats = s.stats.filter(isNonEmptyString).map((x) => x.trim())
+  }
+  if (Object.keys(out).length === 0) return null
+  return out
+}
+
 export function parseLayoutSelect(obj: unknown): { layoutId: string } | null {
   if (!obj || typeof obj !== "object") return null
   const r = obj as Record<string, unknown>
@@ -195,7 +258,9 @@ export type RegionContentPayload = {
   fontSize?: number
   fontWeight?: string
   textAlign?: "left" | "center" | "right"
-  kind?: "text" | "shape" | "icon"
+  kind?: "text" | "shape" | "icon" | "silhouette"
+  shapeName?: string
+  patternId?: string
   fill?: string
   iconName?: string
   color?: string
@@ -213,15 +278,42 @@ function parseRegionContentItem(item: unknown): RegionContentPayload | null {
   if (!regionId) return null
 
   const kindRaw = o.kind
-  const isIcon = kindRaw === "icon" || (typeof o.iconName === "string" && o.iconName.trim().length > 0)
+  const contentStr = typeof o.content === "string" ? o.content.trim() : ""
+  const silhouetteFromContent = contentStr ? extractSilhouetteFromText(contentStr) : null
+  const isSilhouette =
+    kindRaw === "silhouette" ||
+    (typeof o.shapeName === "string" && o.shapeName.trim().length > 0) ||
+    Boolean(silhouetteFromContent)
+
+  if (isSilhouette) {
+    const shapeName =
+      typeof o.shapeName === "string"
+        ? o.shapeName.trim()
+        : silhouetteFromContent ??
+          normalizeSilhouetteName(contentStr) ??
+          contentStr
+    if (!shapeName) return null
+    return {
+      regionId,
+      content: shapeName,
+      kind: "silhouette",
+      shapeName,
+      ...(typeof o.color === "string" ? { color: o.color } : {}),
+    }
+  }
+
+  const iconFromContent = contentStr ? extractIconNameFromText(contentStr) : null
+  const isIcon =
+    kindRaw === "icon" ||
+    (typeof o.iconName === "string" && o.iconName.trim().length > 0) ||
+    Boolean(iconFromContent)
 
   if (isIcon) {
     const iconName =
       typeof o.iconName === "string"
         ? o.iconName.trim()
-        : typeof o.content === "string"
-          ? o.content.trim()
-          : ""
+        : iconFromContent ??
+          (typeof o.content === "string" ? o.content.trim() : "")
     if (!iconName) return null
     return {
       regionId,

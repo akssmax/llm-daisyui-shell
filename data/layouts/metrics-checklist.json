@@ -69,19 +69,6 @@
       },
       "alignment": "left",
       "importance": "primary"
-    },
-    {
-      "id": "accent_icon",
-      "role": "icon",
-      "relativeRect": {
-        "x": 0,
-        "y": 0.9166666666666666,
-        "w": 0.08333333333333333,
-        "h": 0.08333333333333333
-      },
-      "alignment": "center",
-      "importance": "tertiary",
-      "iconHint": "check"
     }
   ],
   "supportedAspects": [
@@ -93,6 +80,50 @@
   "grid": {
     "columns": 12,
     "safeMargin": 64
+  },
+  "constraints": {
+    "regions": {
+      "headline": {
+        "maxLines": 3,
+        "maxChars": 72,
+        "preferredLineCount": 2,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.333
+      },
+      "item1": {
+        "maxLines": 4,
+        "maxChars": 160,
+        "preferredLineCount": 3,
+        "minFontScale": "caption",
+        "maxFontScale": "body",
+        "visualWeight": 0.125
+      },
+      "item2": {
+        "maxLines": 4,
+        "maxChars": 160,
+        "preferredLineCount": 3,
+        "minFontScale": "caption",
+        "maxFontScale": "body",
+        "visualWeight": 0.125
+      },
+      "item3": {
+        "maxLines": 4,
+        "maxChars": 160,
+        "preferredLineCount": 3,
+        "minFontScale": "caption",
+        "maxFontScale": "body",
+        "visualWeight": 0.125
+      },
+      "stat": {
+        "maxLines": 2,
+        "maxChars": 24,
+        "preferredLineCount": 1,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.292
+      }
+    }
   },
   "reference": {
     "source": "manual",

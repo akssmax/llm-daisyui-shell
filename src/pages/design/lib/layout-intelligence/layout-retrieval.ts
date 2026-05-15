@@ -171,6 +171,7 @@ export function buildRetrievalQueryFromIntent(
   overrides?: Partial<LayoutRetrievalQuery>,
 ): LayoutRetrievalQuery {
   const densityMap = { minimal: "low" as const, normal: "medium" as const, dense: "high" as const }
+  const aspectRatio = overrides?.aspectRatio
   return {
     userPrompt,
     platform: intent.intent.platform,
@@ -178,5 +179,6 @@ export function buildRetrievalQueryFromIntent(
     hierarchy: intent.plan.visualHierarchy.length <= 2 ? "strong" : "balanced",
     styleTags: tokenize(`${intent.intent.tone} ${intent.plan.layoutType}`),
     ...overrides,
+    ...(aspectRatio ? { aspectRatio } : {}),
   }
 }

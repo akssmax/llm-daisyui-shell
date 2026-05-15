@@ -93,6 +93,58 @@
     "columns": 12,
     "safeMargin": 64
   },
+  "constraints": {
+    "regions": {
+      "headline": {
+        "maxLines": 3,
+        "maxChars": 72,
+        "preferredLineCount": 2,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.205
+      },
+      "kpi1": {
+        "maxLines": 2,
+        "maxChars": 24,
+        "preferredLineCount": 1,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.179
+      },
+      "kpi2": {
+        "maxLines": 2,
+        "maxChars": 24,
+        "preferredLineCount": 1,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.179
+      },
+      "kpi3": {
+        "maxLines": 2,
+        "maxChars": 24,
+        "preferredLineCount": 1,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.179
+      },
+      "kpi4": {
+        "maxLines": 2,
+        "maxChars": 24,
+        "preferredLineCount": 1,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.179
+      },
+      "body": {
+        "maxLines": 4,
+        "maxChars": 160,
+        "preferredLineCount": 3,
+        "minFontScale": "caption",
+        "maxFontScale": "body",
+        "visualWeight": 0.077
+      }
+    }
+  },
   "reference": {
     "source": "manual",
     "archetype": "metrics-grid",

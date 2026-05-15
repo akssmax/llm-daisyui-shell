@@ -69,6 +69,42 @@
     "columns": 12,
     "safeMargin": 64
   },
+  "constraints": {
+    "regions": {
+      "headline": {
+        "maxLines": 3,
+        "maxChars": 72,
+        "preferredLineCount": 2,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.32,
+        "avoidOverlapWith": [
+          "p1",
+          "p2"
+        ]
+      },
+      "p1": {
+        "maxLines": 0,
+        "maxChars": 0,
+        "visualWeight": 0.28,
+        "maxFontScale": "hero"
+      },
+      "p2": {
+        "maxLines": 0,
+        "maxChars": 0,
+        "visualWeight": 0.28,
+        "maxFontScale": "hero"
+      },
+      "body": {
+        "maxLines": 4,
+        "maxChars": 160,
+        "preferredLineCount": 3,
+        "minFontScale": "caption",
+        "maxFontScale": "body",
+        "visualWeight": 0.12
+      }
+    }
+  },
   "reference": {
     "source": "manual",
     "archetype": "bento-grid",

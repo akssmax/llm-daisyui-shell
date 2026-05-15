@@ -1,9 +1,14 @@
 import type { DesignDocument, DesignElement, DesignPage } from "../types"
 import { fontFamilyForHtmlCss, googleFontStylesheetHrefsForExport } from "./design-fonts"
 import { normalizeFontWeightToCssString } from "./design-text-style"
-import { collectIconPathSpecs, getLucideIconNode } from "./lucide-icon-registry"
-
-const LUCIDE_VIEWBOX = 24
+import { getSilhouettePathData, SILHOUETTE_VIEWBOX_SIZE } from "./agent-silhouette-registry"
+import {
+  collectIconPathSpecs,
+  DEFAULT_LUCIDE_STROKE_WIDTH,
+  getLucideIconNode,
+  isIconPathFilled,
+  LUCIDE_VIEWBOX_SIZE,
+} from "./lucide-icon-registry"
 
 function iconToSvgMarkup(el: Extract<DesignElement, { kind: "icon" }>): string {
   const node = getLucideIconNode(el.iconName)
@@ -11,18 +16,21 @@ function iconToSvgMarkup(el: Extract<DesignElement, { kind: "icon" }>): string {
     return `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:${el.color};font-size:${Math.min(el.width, el.height)}px;">◆</div>`
   }
   const paths = collectIconPathSpecs(node)
-  const scale = Math.min(el.width, el.height) / LUCIDE_VIEWBOX
+  const scale = Math.min(el.width, el.height) / LUCIDE_VIEWBOX_SIZE
+  const pixelStroke = el.strokeWidth ?? DEFAULT_LUCIDE_STROKE_WIDTH
+  const localStroke = pixelStroke / scale
   const pathEls = paths
     .map((spec) => {
-      const usesFill = spec.fill && spec.fill !== "none"
-      const sw = spec.strokeWidth ?? 2
-      if (usesFill) {
-        return `<path d="${spec.d}" fill="${el.color}" transform="scale(${scale})"/>`
+      const filled = isIconPathFilled(spec)
+      const sw = spec.strokeWidth ?? localStroke
+      if (filled) {
+        const fillColor = spec.fill === "currentColor" ? el.color : spec.fill
+        return `<path d="${spec.d}" fill="${fillColor}"/>`
       }
-      return `<path d="${spec.d}" fill="none" stroke="${el.color}" stroke-width="${sw * scale}" stroke-linecap="round" stroke-linejoin="round" transform="scale(${scale})"/>`
+      return `<path d="${spec.d}" fill="none" stroke="${el.color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`
     })
     .join("")
-  return `<svg width="${el.width}" height="${el.height}" viewBox="0 0 ${el.width} ${el.height}" xmlns="http://www.w3.org/2000/svg">${pathEls}</svg>`
+  return `<svg width="${el.width}" height="${el.height}" viewBox="0 0 ${el.width} ${el.height}" xmlns="http://www.w3.org/2000/svg"><g transform="scale(${scale})">${pathEls}</g></svg>`
 }
 
 // ─── HTML Export ────────────────────────────────────────────────────────────
@@ -90,7 +98,17 @@ function elementToHtml(el: DesignElement): string {
     return `<div style="${base}">${iconToSvgMarkup(el)}</div>`
   }
 
+  if (el.kind === "silhouette") {
+    const path = getSilhouettePathData(el.shapeName)
+    if (!path) {
+      return `<div style="${base}background:${el.color};"></div>`
+    }
+    const scale = Math.min(el.width, el.height) / SILHOUETTE_VIEWBOX_SIZE
+    return `<div style="${base}"><svg width="${el.width}" height="${el.height}" viewBox="0 0 ${el.width} ${el.height}" xmlns="http://www.w3.org/2000/svg"><g transform="scale(${scale})"><path d="${path}" fill="${el.color}"/></g></svg></div>`
+  }
+
   return `<div style="${base}"></div>`
+
 }
 
 function pageToHtml(page: DesignPage): string {

@@ -57,6 +57,34 @@
     "columns": 12,
     "safeMargin": 64
   },
+  "constraints": {
+    "regions": {
+      "headline": {
+        "maxLines": 3,
+        "maxChars": 72,
+        "preferredLineCount": 2,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.4
+      },
+      "left": {
+        "maxLines": 2,
+        "maxChars": 24,
+        "preferredLineCount": 1,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.35
+      },
+      "right": {
+        "maxLines": 2,
+        "maxChars": 24,
+        "preferredLineCount": 1,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.35
+      }
+    }
+  },
   "reference": {
     "source": "manual",
     "archetype": "split",

@@ -42,6 +42,11 @@ export type ShapeKind =
   | "polygon"
   | "star"
 
+export type PatternFill = {
+  patternId: string
+  patternColor: string
+}
+
 export type ShapeElement = ElementBase & {
   kind: "shape"
   shape: ShapeKind
@@ -53,15 +58,32 @@ export type ShapeElement = ElementBase & {
   polygonSides?: number
   /** `star` only — number of points (3–12). Default 5. */
   starPoints?: number
+  patternFill?: PatternFill
 }
 
 export type IconElement = ElementBase & {
   kind: "icon"
   iconName: string
+  /** Stroke/fill color for the icon paths. */
+  color: string
+  /** Stroke width in **screen pixels** (default 2). Does not balloon when the icon is resized. */
+  strokeWidth?: number
+}
+
+export type SilhouetteElement = ElementBase & {
+  kind: "silhouette"
+  shapeName: string
   color: string
 }
 
-export type DesignElement = TextElement | ImageElement | ShapeElement | IconElement
+export type DesignElement = TextElement | ImageElement | ShapeElement | IconElement | SilhouetteElement
+
+export type PageBackgroundPattern = {
+  patternId: string
+  color: string
+  backgroundColor?: string
+  opacity?: number
+}
 
 export type Theme = {
   primaryColor: string
@@ -76,10 +98,17 @@ export type DesignPage = {
   width: number
   height: number
   backgroundColor: string
+  backgroundPattern?: PageBackgroundPattern
   elements: DesignElement[]
 }
 
-export type DocumentType = "carousel" | "slide" | "social-post"
+export type DocumentType =
+  | "carousel"
+  | "slide"
+  | "social-post"
+  | "document"
+  | "poster"
+  | "email"
 
 export type DesignDocument = {
   id: string
@@ -98,7 +127,11 @@ export type PatchOp =
   | { op: "apply_theme"; theme: Partial<Theme> }
   | { op: "create_page"; page: DesignPage }
   | { op: "delete_page"; pageId: string }
-  | { op: "update_page"; pageId: string; patch: Partial<Pick<DesignPage, "backgroundColor">> }
+  | {
+      op: "update_page"
+      pageId: string
+      patch: Partial<Pick<DesignPage, "backgroundColor" | "backgroundPattern">>
+    }
   | { op: "reorder_element"; pageId: string; elementId: string; zIndex: number }
 
 export type DesignAiResponse =

@@ -48,7 +48,10 @@ import {
 import { deterministicRepairElements, validateDesignDocument } from "./design-validate"
 import { runJsonPhase } from "./design-agent-orchestrator-helpers"
 import { runIntelligenceAgentTurn } from "./layout-intelligence/design-intelligence-orchestrator"
-import { shouldRunIntelligencePipeline } from "./layout-intelligence/slide-utils"
+import {
+  inferTargetSlideIndex,
+  shouldRunIntelligencePipeline,
+} from "./layout-intelligence/slide-utils"
 
 export type DesignAgentPhaseId =
   | "intent_plan"
@@ -56,8 +59,14 @@ export type DesignAgentPhaseId =
   | "layout_select"
   | "layout_tree"
   | "design_system"
+  | "content_structure"
   | "content_map"
+  | "canvas_select"
+  | "region_bind"
   | "assemble"
+  | "validate"
+  | "refine_engine"
+  | "refine_content"
   | "critic"
   | "auto_fix"
   | "finalize"
@@ -204,8 +213,11 @@ export async function runDesignAgentTurn(opts: RunDesignAgentTurnOptions): Promi
 
   const userContent = opts.userMessage.trim()
 
-  // Intelligence pipeline: empty canvas, new carousels, or "add N more slides"
-  if (shouldRunIntelligencePipeline(userContent, baseCanvasEmpty(document))) {
+  const pageCount = document?.pages.length ?? 0
+  const targetSlideIndex = inferTargetSlideIndex(userContent, pageCount)
+
+  // Intelligence pipeline: empty canvas, new carousels, add slides, or targeted slide edit
+  if (shouldRunIntelligencePipeline(userContent, baseCanvasEmpty(document), pageCount)) {
     const intel = await runIntelligenceAgentTurn(opts)
     return {
       response: intel.response,
@@ -235,7 +247,7 @@ export async function runDesignAgentTurn(opts: RunDesignAgentTurnOptions): Promi
   const ipRaw = await run({
     phaseId: "intent_plan",
     label: "Intent & layout plan",
-    systemPrompt: buildIntentPlanSystemPrompt(userContent),
+    systemPrompt: buildIntentPlanSystemPrompt(userContent, store.canvasPresetMode ?? "auto"),
     userContent,
     model,
     maxTokens: 1400,
@@ -339,7 +351,7 @@ export async function runDesignAgentTurn(opts: RunDesignAgentTurnOptions): Promi
   const composeRaw = await run({
     phaseId: "compose",
     label: "Compose canvas",
-    systemPrompt: buildComposePhaseSystemPrompt(document, bundle),
+    systemPrompt: buildComposePhaseSystemPrompt(document, bundle, { targetSlideIndex }),
     userContent,
     model,
     maxTokens: COMPOSE_MAX_TOKENS,
@@ -378,7 +390,7 @@ export async function runDesignAgentTurn(opts: RunDesignAgentTurnOptions): Promi
   if (composed.kind === "message" && isTruncatedOutput(composeRaw.stream, composed)) {
     const truncatedRetry = await runComposeRetry(
       "Compose canvas (truncation retry)",
-      buildComposeTruncationRetryPrompt(document, bundle),
+      buildComposeTruncationRetryPrompt(document, bundle, { targetSlideIndex }),
       "composeTruncationRetryRaw",
     )
     if (truncatedRetry.kind !== "message") composed = truncatedRetry

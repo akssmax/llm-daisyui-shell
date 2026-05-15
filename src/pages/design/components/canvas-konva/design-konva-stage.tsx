@@ -4,9 +4,10 @@ import { Group, Layer, Rect, Stage, Transformer, Line, Ellipse, Arrow } from "re
 import type Konva from "konva"
 import { nanoid } from "nanoid"
 import { useShallow } from "zustand/react/shallow"
-import type { DesignElement, DesignPage, ShapeElement, TextElement, ShapeKind } from "../../types"
+import type { DesignElement, DesignPage, ShapeElement, SilhouetteElement, TextElement, ShapeKind } from "../../types"
 import { useDesignStore, type ActiveTool } from "../../store/design-store"
 import { DesignElementNode } from "./design-element-node"
+import { PatternFillRect } from "./pattern-fill-rect"
 import { snapToDesignGrid } from "../../lib/design-snap"
 import { fontFamilyForKonva } from "../../lib/design-fonts"
 import { htmlTextareaFontWeight } from "../../lib/design-text-style"
@@ -50,7 +51,7 @@ function buildShapeFromBox(
 }
 
 /** Tools that place new content; clicking an existing element should still select it (Figma/Canva-style). */
-const CREATION_TOOLS: ActiveTool[] = ["text", "shape", "image", "icon"]
+const CREATION_TOOLS: ActiveTool[] = ["text", "shape", "image", "icon", "silhouette"]
 
 function clientRectForNode(stage: Konva.Stage, node: Konva.Group) {
   const container = stage.container()
@@ -98,7 +99,18 @@ export function DesignKonvaStage({
   onPanChange,
   onViewportChange,
 }: Props) {
-  const { selection, selectElements, clearSelection, applyPatches, pendingDesignImage, setPendingDesignImage, setActiveTool, shapeToolVariant, fontEpoch } =
+  const {
+    selection,
+    selectElements,
+    clearSelection,
+    applyPatches,
+    pendingDesignImage,
+    setPendingDesignImage,
+    setActiveTool,
+    shapeToolVariant,
+    silhouetteToolShape,
+    fontEpoch,
+  } =
     useDesignStore(
     useShallow((s) => ({
       selection: s.selection,
@@ -109,6 +121,7 @@ export function DesignKonvaStage({
       setPendingDesignImage: s.setPendingDesignImage,
       setActiveTool: s.setActiveTool,
       shapeToolVariant: s.shapeToolVariant,
+      silhouetteToolShape: s.silhouetteToolShape,
       fontEpoch: s.fontEpoch,
     })),
   )
@@ -572,6 +585,48 @@ export function DesignKonvaStage({
         applyPatches([{ op: "create_element", pageId: page.id, element: textEl }], { clearSelection: false })
         selectElements([textEl.id], page.id)
         setActiveTool("select")
+        return
+      }
+      if (activeTool === "icon") {
+        const z = Math.max(0, ...pageElements.map((el) => el.zIndex)) + 1
+        const size = snapToDesignGrid(96, snapToGrid)
+        const iconEl = {
+          kind: "icon" as const,
+          id: nanoid(8),
+          x: snapToDesignGrid(lx - size / 2, snapToGrid),
+          y: snapToDesignGrid(ly - size / 2, snapToGrid),
+          width: size,
+          height: size,
+          rotation: 0,
+          zIndex: z,
+          opacity: 1,
+          iconName: "sparkles",
+          color: "#6366F1",
+        }
+        applyPatches([{ op: "create_element", pageId: page.id, element: iconEl }], { clearSelection: false })
+        selectElements([iconEl.id], page.id)
+        setActiveTool("select")
+        return
+      }
+      if (activeTool === "silhouette") {
+        const z = Math.max(0, ...pageElements.map((el) => el.zIndex)) + 1
+        const size = snapToDesignGrid(120, snapToGrid)
+        const silhouetteEl: SilhouetteElement = {
+          kind: "silhouette",
+          id: nanoid(8),
+          x: snapToDesignGrid(Math.max(0, lx - size / 2), snapToGrid),
+          y: snapToDesignGrid(Math.max(0, ly - size / 2), snapToGrid),
+          width: size,
+          height: size,
+          rotation: 0,
+          zIndex: z,
+          opacity: 1,
+          shapeName: silhouetteToolShape,
+          color: "#6366F1",
+        }
+        applyPatches([{ op: "create_element", pageId: page.id, element: silhouetteEl }], { clearSelection: false })
+        selectElements([silhouetteEl.id], page.id)
+        setActiveTool("select")
       }
     },
     [
@@ -585,6 +640,7 @@ export function DesignKonvaStage({
       pagePointFromStage,
       selectElements,
       setActiveTool,
+      silhouetteToolShape,
       snapToGrid,
     ],
   )
@@ -702,6 +758,16 @@ export function DesignKonvaStage({
               strokeWidth={1}
               listening={!isHand}
             />
+            {page.backgroundPattern ? (
+              <PatternFillRect
+                width={page.width}
+                height={page.height}
+                fill={page.backgroundPattern.backgroundColor ?? pageBg}
+                patternId={page.backgroundPattern.patternId}
+                patternColor={page.backgroundPattern.color}
+                opacity={page.backgroundPattern.opacity ?? 1}
+              />
+            ) : null}
             {gridLines}
             {/* Elements are clipped to artboard bounds so out-of-range AI output never overflows. */}
             <Group clipX={0} clipY={0} clipWidth={page.width} clipHeight={page.height}>

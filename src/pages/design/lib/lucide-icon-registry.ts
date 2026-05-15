@@ -102,6 +102,12 @@ export function extractIconNameFromText(content: string): LucideIconName | null 
   const trimmed = content.trim()
   if (!trimmed) return null
 
+  const iconKindMatch = trimmed.match(/icon\s+kind\s*=\s*([a-zA-Z0-9-]+)/i)
+  if (iconKindMatch) {
+    const normalized = normalizeIconName(iconKindMatch[1])
+    if (normalized) return normalized
+  }
+
   const iconNameMatch = trimmed.match(/iconName\s*:\s*["']?([a-zA-Z0-9-]+)/i)
   if (iconNameMatch) {
     const normalized = normalizeIconName(iconNameMatch[1])
@@ -133,6 +139,9 @@ export function lucideAllowlistForPrompt(): string {
   return LUCIDE_ICON_ALLOWLIST.join(", ")
 }
 
+export const DEFAULT_LUCIDE_STROKE_WIDTH = 2
+export const LUCIDE_VIEWBOX_SIZE = 24
+
 export type IconPathSpec = {
   d: string
   fill?: string
@@ -140,6 +149,12 @@ export type IconPathSpec = {
   strokeWidth?: number
   strokeLinecap?: string
   strokeLinejoin?: string
+}
+
+/** True when the path should render as a filled shape (rare in Lucide). */
+export function isIconPathFilled(spec: IconPathSpec): boolean {
+  const fill = spec.fill
+  return Boolean(fill && fill !== "none" && fill !== "transparent" && fill !== "currentColor")
 }
 
 function attrString(value: string | number | undefined): string | undefined {

@@ -31,7 +31,8 @@ import { Reasoning, ReasoningTrigger } from "@/components/ai-elements/reasoning"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { DesignAgentChainOfThought } from "./components/design-agent-chain-of-thought"
-import { updateDesignMemoryRating } from "./lib/layout-intelligence/design-memory-store"
+import { rateDesignGeneration } from "./lib/layout-intelligence/design-memory-store"
+import { toast } from "sonner"
 import type { DesignAgentPhaseTrace } from "./lib/design-agent-orchestrator"
 import {
   PromptInput,
@@ -116,6 +117,7 @@ export function DesignChatPanel() {
     message: string
     actionPrompt?: string
   } | null>(null)
+  const [ratedMessageId, setRatedMessageId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const skipInitialChatResetEffect = useRef(true)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
@@ -176,10 +178,24 @@ export function DesignChatPanel() {
     })),
   )
 
-  const handleThumbRating = useCallback(async (rating: 1 | -1) => {
-    const { lastLayoutId, document } = useDesignStore.getState()
-    if (!lastLayoutId || !document) return
-    await updateDesignMemoryRating(lastLayoutId, rating, document.type)
+  const handleThumbRating = useCallback(async (messageId: string, rating: 1 | -1) => {
+    const { lastGenerationId, lastBanditContextKey, lastLayoutId, document } = useDesignStore.getState()
+    if (!document) return
+    if (lastGenerationId) {
+      await rateDesignGeneration(lastGenerationId, rating, lastBanditContextKey ?? undefined)
+    }
+    setRatedMessageId(messageId)
+    toast.success(
+      rating === 1
+        ? "Thanks — we'll favor similar layouts for this kind of content."
+        : "Got it — we'll avoid this layout pattern next time.",
+    )
+    if (!lastGenerationId && lastLayoutId) {
+      const { updateDesignMemoryRating } = await import(
+        "./lib/layout-intelligence/design-memory-store"
+      )
+      await updateDesignMemoryRating(lastLayoutId, rating, document.type)
+    }
   }, [])
 
   useEffect(() => {
@@ -204,6 +220,7 @@ export function DesignChatPanel() {
     prevMessageCountRef.current = 0
     setAgentLivePhases([])
     setChainOpenByAssistant({})
+    setRatedMessageId(null)
   }, [designChatThreadNonce, setAiLoading])
 
   useEffect(() => {
@@ -527,8 +544,9 @@ export function DesignChatPanel() {
                           tooltip="Helpful"
                           variant="ghost"
                           size="icon-sm"
-                          className="rounded-lg text-muted-foreground hover:bg-emerald-500/12 hover:text-emerald-600 dark:hover:text-emerald-400"
-                          onClick={() => void handleThumbRating(1)}
+                          disabled={ratedMessageId === msg.id}
+                          className="rounded-lg text-muted-foreground hover:bg-emerald-500/12 hover:text-emerald-600 dark:hover:text-emerald-400 disabled:opacity-40"
+                          onClick={() => void handleThumbRating(msg.id, 1)}
                         >
                           <ThumbsUp className="size-4" />
                         </MessageAction>
@@ -536,8 +554,9 @@ export function DesignChatPanel() {
                           tooltip="Not helpful"
                           variant="ghost"
                           size="icon-sm"
-                          className="rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => void handleThumbRating(-1)}
+                          disabled={ratedMessageId === msg.id}
+                          className="rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                          onClick={() => void handleThumbRating(msg.id, -1)}
                         >
                           <ThumbsDown className="size-4" />
                         </MessageAction>

@@ -69,6 +69,44 @@
     "columns": 12,
     "safeMargin": 64
   },
+  "constraints": {
+    "regions": {
+      "headline": {
+        "maxLines": 3,
+        "maxChars": 72,
+        "preferredLineCount": 2,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.4,
+        "avoidOverlapWith": [
+          "product"
+        ]
+      },
+      "body": {
+        "maxLines": 4,
+        "maxChars": 160,
+        "preferredLineCount": 3,
+        "minFontScale": "caption",
+        "maxFontScale": "body",
+        "visualWeight": 0.15
+      },
+      "cta": {
+        "maxLines": 1,
+        "maxChars": 28,
+        "preferredLineCount": 1,
+        "minFontScale": "body",
+        "maxFontScale": "h3",
+        "visualWeight": 0.1,
+        "minDistanceFromEdge": 48
+      },
+      "product": {
+        "maxLines": 0,
+        "maxChars": 0,
+        "visualWeight": 0.35,
+        "maxFontScale": "hero"
+      }
+    }
+  },
   "reference": {
     "source": "manual",
     "archetype": "split",

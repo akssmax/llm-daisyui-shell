@@ -29,6 +29,7 @@ import {
   shapeToolIcon,
   shapeToolLabel,
 } from "../../lib/shape-tool-variants.tsx"
+import { AGENT_AVATAR_SHAPES } from "../../lib/agent-silhouette-registry"
 import { PresetPicker } from "./preset-picker"
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -71,6 +72,8 @@ export function DesignToolbar() {
     setActiveTool,
     shapeToolVariant,
     setShapeToolVariant,
+    silhouetteToolShape,
+    setSilhouetteToolShape,
     setPendingDesignImage,
   } = useDesignStore(
     useShallow((s) => ({
@@ -83,6 +86,8 @@ export function DesignToolbar() {
       setActiveTool: s.setActiveTool,
       shapeToolVariant: s.shapeToolVariant,
       setShapeToolVariant: s.setShapeToolVariant,
+      silhouetteToolShape: s.silhouetteToolShape,
+      setSilhouetteToolShape: s.setSilhouetteToolShape,
       setPendingDesignImage: s.setPendingDesignImage,
     })),
   )
@@ -137,7 +142,7 @@ export function DesignToolbar() {
       {document && (
         <>
           <Separator orientation="vertical" className="mx-1 h-5" />
-          <ToolbarTooltip label="Undo" disabled={past.length === 0}>
+          <ToolbarTooltip label="Undo (⌘Z)" disabled={past.length === 0}>
             <Button
               variant="ghost"
               size="icon"
@@ -149,7 +154,7 @@ export function DesignToolbar() {
               <Undo2 className="h-3.5 w-3.5" />
             </Button>
           </ToolbarTooltip>
-          <ToolbarTooltip label="Redo" disabled={future.length === 0}>
+          <ToolbarTooltip label="Redo (⌘⇧Z)" disabled={future.length === 0}>
             <Button
               variant="ghost"
               size="icon"
@@ -250,7 +255,54 @@ export function DesignToolbar() {
               <ImageIcon className="h-3.5 w-3.5" />
             </Button>
           </ToolbarTooltip>
-          {toolBtn("icon", "Icon placeholder", <Sparkles className="h-3.5 w-3.5" />)}
+          {toolBtn("icon", "Icon (Lucide)", <Sparkles className="h-3.5 w-3.5" />)}
+          <div
+            className={cn(
+              "flex h-7 overflow-hidden rounded-lg border border-transparent",
+              activeTool === "silhouette" && "border-primary/40 ring-1 ring-primary/40",
+            )}
+          >
+            <ToolbarTooltip label={`Agent shape: ${silhouetteToolShape}`}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0 rounded-none rounded-l-lg"
+                aria-label="Agent silhouette"
+                onClick={() => setActiveTool("silhouette")}
+              >
+                <span className="text-[10px] font-bold">◇</span>
+              </Button>
+            </ToolbarTooltip>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-6 shrink-0 rounded-none rounded-r-lg border-l border-border/80 px-0"
+                  aria-label="More agent shapes"
+                >
+                  <ChevronDown className="h-3 w-3 opacity-80" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="max-h-64 min-w-[10rem] overflow-y-auto">
+                {AGENT_AVATAR_SHAPES.map((name) => (
+                  <DropdownMenuItem
+                    key={name}
+                    className="gap-2"
+                    onClick={() => {
+                      setSilhouetteToolShape(name)
+                      setActiveTool("silhouette")
+                    }}
+                  >
+                    <span className="w-4">{silhouetteToolShape === name ? "✓" : ""}</span>
+                    <span>{name}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </>
       )}
     </div>

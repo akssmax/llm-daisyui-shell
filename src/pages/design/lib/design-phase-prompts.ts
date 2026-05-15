@@ -3,8 +3,12 @@ import { buildDesignSystemPrompt, buildSlimDocumentContextForAgent, COMPOSE_SCHE
 import type { DesignTokenBundle, IntentPlanPayload, LayoutTree } from "./design-agent-schemas"
 import { retrieveDesignPatterns } from "./design-pattern-retrieval"
 import type { LayoutPattern } from "./layout-intelligence/types"
+import { silhouettesForPrompt } from "./agent-silhouette-registry"
+import { patternsForPrompt } from "./fill-pattern-catalog"
 import { lucideAllowlistForPrompt } from "./lucide-icon-registry"
 import { tailwindThemePromptList } from "./layout-intelligence/tailwind-theme-builder"
+import { canvasFormatsForPrompt } from "./layout-intelligence/canvas-spec"
+import type { CanvasPresetMode } from "./design-presets"
 
 const JSON_ONLY = "Reply with ONLY one JSON object (no markdown fences, no prose). The API uses JSON mode."
 
@@ -47,17 +51,33 @@ export function summarizeSemanticBundle(
   return out
 }
 
-export function buildIntentPlanSystemPrompt(userMessage: string): string {
+export function buildIntentPlanSystemPrompt(
+  userMessage: string,
+  canvasMode: CanvasPresetMode = "auto",
+): string {
   const patterns = retrieveDesignPatterns(userMessage, 3200)
+  const canvasLocked =
+    canvasMode !== "auto"
+      ? `Canvas is LOCKED to preset "${canvasMode}" — use that format's width×height in plan.canvas.`
+      : "Choose the best canvas format from the catalog below based on the user request (resume→resume/a4-portrait, cover letter→cover-letter, poster→poster-a3, email→email-header or email-newsletter, website hero→website-hero, etc.)."
+
   return [
-    "You are stage 1–2 of a design agent: semantic intent + layout plan. Do NOT output canvas elements or coordinates.",
+    "You are stage 1–2 of a design agent: semantic intent + layout plan + canvas size. Do NOT output canvas elements or coordinates.",
     JSON_ONLY,
     "",
     "Return exactly this shape:",
     `{ "intent": { "designType": string, "tone": string, "platform": string, "density": "minimal"|"normal"|"dense", "contentPriority": string[], "audience": string },`,
-    `  "plan": { "layoutType": string, "visualHierarchy": string[], "grid": { "columns": number, "safeMargin": number }, "spacingStrategy": { "baseUnit": number, "sectionGap": number }, "slideCount": number } }`,
+    `  "plan": { "layoutType": string, "visualHierarchy": string[], "grid": { "columns": number, "safeMargin": number }, "spacingStrategy": { "baseUnit": number, "sectionGap": number }, "slideCount": number,`,
+    `    "canvas": { "width": number, "height": number, "format": string, "documentType": "carousel"|"slide"|"social-post"|"document"|"poster"|"email" } } }`,
+    "",
+    canvasLocked,
+    "plan.canvas is REQUIRED. Pick width/height from the format catalog (or custom dimensions for unusual requests).",
+    "",
+    "Format catalog:",
+    canvasFormatsForPrompt(),
     "",
     "For carousels, decks, or multi-slide requests: set plan.slideCount to the number of slides (e.g. 5 for a 5-slide LinkedIn carousel). Single-image posts use slideCount: 1.",
+    "Print/documents (resume, cover letter, A4): use slideCount 1, documentType document, safeMargin 48–64.",
     "",
     "Internal design knowledge (follow unless user conflicts):",
     patterns,
@@ -90,10 +110,178 @@ export function buildDesignSystemPhasePrompt(userMessage: string, ip: IntentPlan
   ].join("\n")
 }
 
+function regionConstraintHints(layout: LayoutTree): string {
+  const c = layout.constraints?.regions
+  if (!c) return ""
+  return layout.regions
+    .map((r) => {
+      const rc = c[r.id]
+      if (!rc) return null
+      const parts: string[] = []
+      if (rc.maxChars) parts.push(`maxChars:${rc.maxChars}`)
+      if (rc.maxLines) parts.push(`maxLines:${rc.maxLines}`)
+      if (rc.visualWeight) parts.push(`weight:${rc.visualWeight}`)
+      return parts.length ? `${r.id}(${r.role}): ${parts.join(", ")}` : null
+    })
+    .filter(Boolean)
+    .join("\n")
+}
+
+export function buildContentStructurePhasePrompt(
+  userMessage: string,
+  ip: IntentPlanPayload,
+  layout?: LayoutTree,
+): string {
+  const patterns = retrieveDesignPatterns(`${userMessage} content structure`, 2800)
+  const hints = layout ? regionConstraintHints(layout) : ""
+  return [
+    "You are stage 3a: decompose the user request into structured copy fields. Do NOT output coordinates or canvas elements.",
+    JSON_ONLY,
+    "",
+    "Return exactly:",
+    `{ "contentStructure": {`,
+    `  "headline": string, "subheading": string, "body": string,`,
+    `  "cta": string, "stats": string[], "quote": string, "tone": string`,
+    `}}`,
+    "",
+    "Only include fields relevant to the request. Write full, benefit-driven copy.",
+    hints ? `\nSuggested limits:\n${hints}` : "",
+    "",
+    "Intent + plan:",
+    JSON.stringify(ip),
+    "",
+    layout
+      ? `Layout regions (hints): ${layout.regions.map((r) => `${r.id}:${r.role}`).join(", ")}`
+      : "Use semantic fields: headline, subheading, body, cta, stats, quote.",
+    "",
+    "User message:",
+    userMessage,
+    "",
+    "Design principles:",
+    patterns,
+  ].join("\n")
+}
+
+const SEMANTIC_REGION_SPEC = [
+  `{ "regionId": "headline", "content": "<primary headline>" }`,
+  `{ "regionId": "subheading", "content": "<optional subhead>" }`,
+  `{ "regionId": "body", "content": "<body copy>" }`,
+  `{ "regionId": "visual", "content": "icon kind=<kebab-case from allowlist>" }`,
+  `{ "regionId": "footer", "content": "<CTA line with arrow>" }`,
+  `{ "regionId": "cta", "content": "<call to action>" }`,
+  `{ "regionId": "quote", "content": "<testimonial>" }`,
+  `{ "regionId": "stat", "content": "<metric value>" }`,
+].join(",\n    ")
+
+export function buildContentMapPhasePrompt(
+  userMessage: string,
+  ip: IntentPlanPayload,
+  layout: LayoutTree | null,
+  _tokens: DesignTokenBundle,
+  slideCount = 1,
+  contentStructure?: import("./design-agent-schemas").ContentStructure,
+): string {
+  const iconList = lucideAllowlistForPrompt()
+  const silhouetteList = silhouettesForPrompt()
+  const patternList = patternsForPrompt()
+  const patterns = retrieveDesignPatterns(`${userMessage} ${ip.intent.tone}`, 2000)
+  const hints = layout ? regionConstraintHints(layout) : ""
+  const structureBlock = contentStructure
+    ? `\nStructured copy (map to matching regions):\n${JSON.stringify(contentStructure, null, 0)}`
+    : ""
+  const regionSpec = layout
+    ? layout.regions
+        .map((r) => {
+          const rc = layout.constraints?.regions[r.id]
+          const limit = rc?.maxChars ? ` max ${rc.maxChars} chars` : ""
+          if (r.role === "icon") {
+            return `{ "regionId": "${r.id}", "kind": "icon", "iconName": "<kebab-case from allowlist>" }`
+          }
+          return `{ "regionId": "${r.id}", "content": "<copy for ${r.role}${limit}>" }`
+        })
+        .join(",\n    ")
+    : SEMANTIC_REGION_SPEC
+  const iconRules = [
+    "For semantic UI icons: \"icon kind=<name>\" OR kind:\"icon\" + iconName from allowlist.",
+    `Icon allowlist: ${iconList}`,
+    "For decorative blobs (not UI icons): \"silhouette kind=<Name>\" OR kind:\"silhouette\" + shapeName.",
+    `Silhouette shapes (PascalCase): ${silhouetteList}`,
+    "Optional page/region pattern: \"pattern: grid-light\" or patternId on region.",
+    `Pattern ids: ${patternList}`,
+    "Match semantics: CTA→arrow-right, trust→shield, decorative→Heart/Burst/Soft burst.",
+    "Write FULL copy — do not truncate. Layout will be chosen after content mapping.",
+    "One dominant focal point per slide.",
+  ].join("\n")
+
+  if (slideCount > 1) {
+    return [
+      `You are stage 4b: map structured copy to ${slideCount} slides.`,
+      "CRITICAL: Each slide is a SEPARATE page. Put ONLY that slide's content in its regionContents.",
+      JSON_ONLY,
+      "",
+      `Return: { "slideCount": ${slideCount}, "slides": [`,
+      `  { "slideIndex": 0, "regionContents": [ ${regionSpec} ] },`,
+      "  ... one entry per slide",
+      "  ],",
+      '  "assistantNote": string }',
+      "",
+      iconRules,
+      hints ? `Region limits:\n${hints}` : "",
+      structureBlock,
+      `Tone: ${ip.intent.tone} · Platform: ${ip.intent.platform}`,
+      "",
+      "Design principles:",
+      patterns,
+      "",
+      "User message:",
+      userMessage,
+    ].join("\n")
+  }
+
+  return [
+    "You are stage 4b: map structured copy to layout regions. Do NOT output x/y/width/height.",
+    JSON_ONLY,
+    "",
+    'Return: { "regionContents": [',
+    `  ${regionSpec}`,
+    "  ],",
+    '  "assistantNote": string }',
+    "",
+    iconRules,
+    hints ? `Region limits:\n${hints}` : "",
+    structureBlock,
+    `Tone: ${ip.intent.tone} · Platform: ${ip.intent.platform}`,
+    "",
+    "Design principles:",
+    patterns,
+    "",
+    "User message:",
+    userMessage,
+  ].join("\n")
+}
+
+export function buildContentMapRefinementPrompt(
+  userMessage: string,
+  ip: IntentPlanPayload,
+  layout: LayoutTree,
+  tokens: DesignTokenBundle,
+  issuesSummary: string,
+  contentStructure?: import("./design-agent-schemas").ContentStructure,
+): string {
+  return [
+    buildContentMapPhasePrompt(userMessage, ip, layout, tokens, 1, contentStructure),
+    "",
+    "REFINEMENT — previous output failed quality validation. Fix these issues:",
+    issuesSummary,
+    "Shorten or rewrite copy to respect maxChars per region. Keep the same layout region ids.",
+  ].join("\n")
+}
+
 export function buildLayoutSelectPhasePrompt(
   userMessage: string,
   ip: IntentPlanPayload,
   candidates: LayoutPattern[],
+  contentProfile?: import("./layout-intelligence/content-profile").ContentProfile,
 ): string {
   const catalog = candidates.map((l) => ({
     id: l.id,
@@ -103,82 +291,27 @@ export function buildLayoutSelectPhasePrompt(
     density: l.density,
     hierarchy: l.hierarchy,
     regions: l.regions.map((r) => ({ id: r.id, role: r.role, importance: r.importance })),
+    constraints: l.constraints?.regions,
   }))
+  const patterns = retrieveDesignPatterns(userMessage, 2000)
   return [
-    "You are stage 2: pick ONE layout from the catalog. Do NOT invent geometry or relativeRect.",
+    "You are stage 5: pick ONE layout that best fits the mapped content. Do NOT invent geometry.",
     JSON_ONLY,
     "",
     'Return: { "layoutId": string, "reason": string }',
     "layoutId MUST be one of the candidate ids below.",
+    "Prefer layouts whose regions can fit the headline/body lengths and icon needs.",
     "",
     "Intent + plan:",
     JSON.stringify(ip),
     "",
+    contentProfile ? `Content profile:\n${JSON.stringify(contentProfile, null, 0)}` : "",
+    "",
     "Layout candidates:",
     JSON.stringify(catalog, null, 0),
     "",
-    "User message:",
-    userMessage,
-  ].join("\n")
-}
-
-export function buildContentMapPhasePrompt(
-  userMessage: string,
-  ip: IntentPlanPayload,
-  layout: LayoutTree,
-  tokens: DesignTokenBundle,
-  slideCount = 1,
-): string {
-  const iconList = lucideAllowlistForPrompt()
-  const regionSpec = layout.regions
-    .map((r) => {
-      if (r.role === "icon") {
-        return `{ "regionId": "${r.id}", "kind": "icon", "iconName": "<kebab-case from allowlist>" }`
-      }
-      return `{ "regionId": "${r.id}", "content": "<copy for ${r.role}>" }`
-    })
-    .join(",\n    ")
-  const iconRules = [
-    "For regions with role icon: use kind icon and iconName from allowlist (not free text).",
-    `Icon allowlist: ${iconList}`,
-    "Match semantics: CTA→arrow-right, trust→shield, success→check-circle, growth→trending-up.",
-  ].join("\n")
-
-  if (slideCount > 1) {
-    return [
-      `You are stage 4: write copy for a ${slideCount}-slide ${ip.intent.designType}.`,
-      "CRITICAL: Each slide is a SEPARATE page. Put ONLY that slide's content in its regionContents — do NOT put all slides on one page.",
-      JSON_ONLY,
-      "",
-      `Return: { "slideCount": ${slideCount}, "slides": [`,
-      `  { "slideIndex": 0, "regionContents": [ ${regionSpec} ] },`,
-      `  { "slideIndex": 1, "regionContents": [ ... ] },`,
-      "  ... one entry per slide through slideIndex " + String(slideCount - 1),
-      "  ],",
-      '  "assistantNote": string }',
-      "",
-      "One clear message per slide. Slide 0 = hook, middle = value/proof, last = CTA/summary.",
-      iconRules,
-      `Tone: ${ip.intent.tone} · Platform: ${ip.intent.platform}`,
-      `Fonts: ${tokens.tokens.headingFont} / ${tokens.tokens.bodyFont}`,
-      "",
-      "User message:",
-      userMessage,
-    ].join("\n")
-  }
-
-  return [
-    "You are stage 4: write copy for each layout region. Do NOT output x/y/width/height or a full document.",
-    JSON_ONLY,
-    "",
-    'Return: { "regionContents": [',
-    `  ${regionSpec}`,
-    "  ],",
-    '  "assistantNote": string }',
-    "",
-    iconRules,
-    `Tone: ${ip.intent.tone} · Platform: ${ip.intent.platform}`,
-    `Fonts: ${tokens.tokens.headingFont} / ${tokens.tokens.bodyFont}`,
+    "Design principles:",
+    patterns,
     "",
     "User message:",
     userMessage,
@@ -189,7 +322,7 @@ export function buildContentMapPhasePrompt(
 export function buildContentMapRetryPrompt(
   userMessage: string,
   ip: IntentPlanPayload,
-  layout: LayoutTree,
+  layout: LayoutTree | null,
   tokens: DesignTokenBundle,
   slideCount: number,
 ): string {
@@ -224,6 +357,8 @@ export function buildLayoutTreePhasePrompt(userMessage: string, ip: IntentPlanPa
 export type ComposePromptOptions = {
   includeDocument?: boolean
   documentMaxChars?: number
+  /** 0-based index when the user asked to edit a specific slide/page */
+  targetSlideIndex?: number | null
 }
 
 export function buildComposePhaseSystemPrompt(
@@ -251,12 +386,24 @@ export function buildComposePhaseSystemPrompt(
       ].join("\n")
     : ""
 
+  const targetIdx = opts?.targetSlideIndex
+  const targetSlideRules =
+    targetIdx != null && document && document.pages[targetIdx]
+      ? [
+          "TARGET SLIDE (critical):",
+          `- User requested changes ONLY on slide ${targetIdx + 1} (pages[${targetIdx}], pageId="${document.pages[targetIdx].id}").`,
+          "- Use that pageId for all patch ops. Do not add elements to any other page.",
+          "- Prefer deleting existing elements on that page and recreating, or patch only that page.",
+        ].join("\n")
+      : ""
+
   return [
     JSON_ONLY,
     "You are stage 5: produce the final canvas as patches or a full document. Obey the semantic plan and tokens.",
     COMPOSE_SCHEMA_EXCERPT,
     COMPOSE_RULES,
     multiSlideRules,
+    targetSlideRules,
     "",
     document
       ? `You are editing an existing document (${document.pages.length} page(s)): prefer kind:"patches" unless a full redesign is clearly required. Use pageId from the list above — never reuse pages[0] for new slides.`
@@ -274,10 +421,12 @@ export function buildComposePhaseSystemPrompt(
 export function buildComposeTruncationRetryPrompt(
   document: DesignDocument | null,
   bundle: { intentPlan: IntentPlanPayload; tokens: DesignTokenBundle; layout: LayoutTree },
+  opts?: Pick<ComposePromptOptions, "targetSlideIndex">,
 ): string {
   return buildComposePhaseSystemPrompt(document, bundle, {
     includeDocument: Boolean(document),
     documentMaxChars: document ? 4_000 : 0,
+    targetSlideIndex: opts?.targetSlideIndex,
   })
 }
 
@@ -343,6 +492,8 @@ export function buildComposeHybridPrompt(
   bundle: { intentPlan: IntentPlanPayload; tokens: DesignTokenBundle; layout: LayoutTree },
 ): string {
   const iconList = lucideAllowlistForPrompt()
+  const silhouetteList = silhouettesForPrompt()
+  const patternList = patternsForPrompt()
   const regionSpec = bundle.layout.regions
     .map((r) => {
       if (r.role === "icon") {
@@ -360,8 +511,11 @@ export function buildComposeHybridPrompt(
     '  "assistantNote": string }',
     "",
     "Write real copy for each regionId from the user request. One string per region.",
-    "For icon regions: use kind icon + iconName from allowlist — never put icon metadata in content strings.",
+    "For icon regions: use kind icon + iconName from allowlist.",
     `Icon allowlist: ${iconList}`,
+    "For decorative blobs: silhouette kind=<Name> or kind silhouette + shapeName.",
+    `Silhouette shapes: ${silhouetteList}`,
+    `Pattern ids (optional): ${patternList}`,
     "Replace emojis with icons when the user asks (e.g. rocket, sparkles, arrow-right).",
     `Fonts: heading=${bundle.tokens.tokens.headingFont}, body=${bundle.tokens.tokens.bodyFont}`,
     `Tone: ${bundle.intentPlan.intent.tone}`,

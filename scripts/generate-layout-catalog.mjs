@@ -41,6 +41,57 @@ function iconRegion(id, iconHint, y = 0.083) {
   return region(id, "icon", 11, 1, y, 0.083, "center", "tertiary", iconHint)
 }
 
+const ROLE_DEFAULTS = {
+  headline: { maxLines: 3, maxChars: 72, preferredLineCount: 2, minFontScale: "h2", maxFontScale: "hero", visualWeight: 0.4 },
+  subheading: { maxLines: 2, maxChars: 90, preferredLineCount: 1, minFontScale: "body", maxFontScale: "h2", visualWeight: 0.15 },
+  body: { maxLines: 4, maxChars: 160, preferredLineCount: 3, minFontScale: "caption", maxFontScale: "body", visualWeight: 0.15 },
+  cta: { maxLines: 1, maxChars: 28, preferredLineCount: 1, minFontScale: "body", maxFontScale: "h3", visualWeight: 0.1, minDistanceFromEdge: 48 },
+  quote: { maxLines: 5, maxChars: 200, preferredLineCount: 3, minFontScale: "h3", maxFontScale: "h1", visualWeight: 0.45 },
+  stats: { maxLines: 2, maxChars: 24, preferredLineCount: 1, minFontScale: "h2", maxFontScale: "hero", visualWeight: 0.35 },
+  image: { maxLines: 0, maxChars: 0, visualWeight: 0.3 },
+  footer: { maxLines: 1, maxChars: 60, preferredLineCount: 1, minFontScale: "caption", maxFontScale: "body", visualWeight: 0.05, minDistanceFromEdge: 48 },
+  icon: { maxLines: 0, maxChars: 0, visualWeight: 0.05 },
+}
+
+function constraintForRegion(r, allRegions) {
+  const role = r.role
+  const base = ROLE_DEFAULTS[role] ?? ROLE_DEFAULTS.body
+  const c = { ...base }
+  if (r.importance === "primary" && role !== "icon") {
+    c.visualWeight = Math.max(c.visualWeight ?? 0.2, 0.35)
+    c.maxFontScale = "hero"
+  }
+  if (r.importance === "tertiary") {
+    c.visualWeight = Math.min(c.visualWeight ?? 0.1, 0.08)
+    c.maxFontScale = "caption"
+  }
+  if (role === "headline" || role === "quote") {
+    const visuals = allRegions.filter((x) => x.role === "image").map((x) => x.id)
+    if (visuals.length) c.avoidOverlapWith = visuals
+  }
+  if (role === "cta" || role === "footer") {
+    c.minDistanceFromEdge = 48
+  }
+  return c
+}
+
+function buildConstraints(regions) {
+  const regionConstraints = {}
+  let weightSum = 0
+  for (const r of regions) {
+    const c = constraintForRegion(r, regions)
+    regionConstraints[r.id] = c
+    weightSum += c.visualWeight ?? 0
+  }
+  if (weightSum > 0 && Math.abs(weightSum - 1) > 0.15) {
+    for (const id of Object.keys(regionConstraints)) {
+      const w = regionConstraints[id].visualWeight ?? 0
+      regionConstraints[id].visualWeight = Math.round((w / weightSum) * 1000) / 1000
+    }
+  }
+  return { regions: regionConstraints }
+}
+
 const ASPECT_1080 = [{ w: 1080, h: 1080 }]
 const ASPECT_LINKEDIN = [{ w: 1080, h: 1350 }]
 const ASPECT_SLIDE = [{ w: 1920, h: 1080 }]
@@ -60,6 +111,7 @@ const layouts = [
       region("stat", "stats", 2, 8, 0.35, 0.22, "center", "primary"),
       region("body", "body", 2, 8, 0.62, 0.12, "center", "secondary"),
       region("cta", "cta", 4, 4, 0.82, 0.08, "center", "secondary"),
+      iconRegion("accent_icon", "arrow-right"),
     ],
     supportedAspects: ASPECT_LINKEDIN,
   },
@@ -749,6 +801,7 @@ for (const layout of layouts) {
   const full = {
     ...layout,
     grid: { columns: 12, safeMargin: 64 },
+    constraints: buildConstraints(layout.regions),
     reference: { source: "manual", archetype: layout.archetype, tags: layout.styleTags },
   }
   writeFileSync(join(layoutsDir, `${layout.id}.json`), JSON.stringify(full, null, 2))

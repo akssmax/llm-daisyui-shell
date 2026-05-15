@@ -19,6 +19,7 @@ describe("lucide icon registry", () => {
   it("extracts icon name from malformed model text", () => {
     expect(extractIconNameFromText("icon: sparkles | iconName: rocket")).toBe("rocket")
     expect(extractIconNameFromText("iconName: sparkles")).toBe("sparkles")
+    expect(extractIconNameFromText("icon kind=zap")).toBe("zap")
   })
 })
 
@@ -63,7 +64,7 @@ describe("style auto-pick brutalist gating", () => {
 
 describe("assembler icon regions", () => {
   it("emits IconElement for icon region content", () => {
-    const pattern = getLayoutById("social-hero-bold")
+    const pattern = getLayoutById("li-carousel-hero-centered")
     expect(pattern).toBeDefined()
     const intent = parseIntentPlan({
       intent: {
@@ -87,6 +88,7 @@ describe("assembler icon regions", () => {
       layout,
       [
         { regionId: "headline", content: "Hello" },
+        { regionId: "stat", content: "99%" },
         { regionId: "accent_icon", kind: "icon", iconName: "sparkles", content: "sparkles" },
       ],
       { intentPlan: intent, tokens: tokens as never },

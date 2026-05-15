@@ -10,6 +10,17 @@ export const PRESET_SIZES = {
 
 export type PresetKey = keyof typeof PRESET_SIZES
 
+/** User chose dynamic sizing — intent phase picks format from the prompt. */
+export type CanvasPresetMode = PresetKey | "auto"
+
+/** Fallback only — real dimensions come from the agent `canvas-spec` pipeline when mode is `"auto"`. */
+export const AI_AUTO_PRESET = {
+  width: 1080,
+  height: 1080,
+  label: "Let AI decide",
+  type: "document" as DocumentType,
+} as const
+
 export const DEFAULT_THEME: Theme = {
   primaryColor: "#6366f1",
   secondaryColor: "#8b5cf6",
@@ -28,8 +39,12 @@ export function createBlankPage(width: number, height: number, bgColor = "#fffff
   }
 }
 
-export function createBlankDocument(preset: PresetKey, title = "Untitled Design"): DesignDocument {
-  const { width, height, type } = PRESET_SIZES[preset]
+export function createBlankDocument(
+  preset: CanvasPresetMode,
+  title = "Untitled Design",
+): DesignDocument {
+  const { width, height, type } =
+    preset === "auto" ? AI_AUTO_PRESET : PRESET_SIZES[preset]
   const now = new Date().toISOString()
   return {
     id: nanoid(8),

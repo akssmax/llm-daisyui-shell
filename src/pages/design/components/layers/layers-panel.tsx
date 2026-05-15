@@ -3,18 +3,34 @@ import { Layers } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Label } from "@/components/ui/label"
+import { cn } from "@/lib/utils"
 import { useDesignStore } from "../../store/design-store"
 import { safePageElements } from "../../lib/safe-page-elements"
+import { formatColorDisplayLabel } from "../../lib/tailwind-color-palette"
 import { LayerRow } from "./layer-row"
-import { DesignColorPicker } from "../properties/design-color-picker"
 
 export function LayersPanel() {
-  const { document, activePageId, selection, selectElements, applyPatches, setActiveTool } = useDesignStore(
+  const {
+    document,
+    activePageId,
+    selection,
+    propertiesPanelOpen,
+    propertiesPanelTarget,
+    selectElements,
+    openPageProperties,
+    closePropertiesPanel,
+    applyPatches,
+    setActiveTool,
+  } = useDesignStore(
     useShallow((s) => ({
       document: s.document,
       activePageId: s.activePageId,
       selection: s.selection,
+      propertiesPanelOpen: s.propertiesPanelOpen,
+      propertiesPanelTarget: s.propertiesPanelTarget,
       selectElements: s.selectElements,
+      openPageProperties: s.openPageProperties,
+      closePropertiesPanel: s.closePropertiesPanel,
       applyPatches: s.applyPatches,
       setActiveTool: s.setActiveTool,
     })),
@@ -29,6 +45,8 @@ export function LayersPanel() {
 
   if (!page) return null
   const pageId = page.id
+  const isFrameSelected = propertiesPanelOpen && propertiesPanelTarget === "page"
+  const frameFillLabel = formatColorDisplayLabel(page.backgroundColor)
 
   function moveUp(idx: number) {
     const el = sorted[idx]
@@ -64,21 +82,34 @@ export function LayersPanel() {
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="flex flex-col gap-2 border-b border-border/60 px-2 pb-2 pt-1">
-          <div className="flex items-center gap-2 px-0.5">
-            <Label className="w-14 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTool("select")
+              if (isFrameSelected) closePropertiesPanel()
+              else openPageProperties()
+            }}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-0.5 py-1 text-left transition-colors",
+              isFrameSelected ? "bg-accent text-accent-foreground" : "hover:bg-muted",
+            )}
+            aria-pressed={isFrameSelected}
+            aria-label={`Frame fill ${frameFillLabel}. Open page properties.`}
+          >
+            <Label className="w-14 shrink-0 cursor-pointer text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               Frame
             </Label>
-            <div className="min-w-0 flex-1">
-              <DesignColorPicker
-                value={page.backgroundColor}
-                onChange={(hex) =>
-                  applyPatches([{ op: "update_page", pageId, patch: { backgroundColor: hex } }], {
-                    clearSelection: false,
-                  })
-                }
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span
+                className="size-4 shrink-0 rounded-sm border border-black/10"
+                style={{ backgroundColor: page.backgroundColor }}
+                aria-hidden
               />
-            </div>
-          </div>
+              <span className="truncate font-mono text-xs text-muted-foreground" title={frameFillLabel}>
+                {frameFillLabel}
+              </span>
+            </span>
+          </button>
         </div>
         <div className="flex flex-col gap-0.5 px-2 pb-2">
           {sorted.length === 0 ? (

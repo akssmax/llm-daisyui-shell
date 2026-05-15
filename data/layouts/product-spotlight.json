@@ -57,19 +57,6 @@
       },
       "alignment": "center",
       "importance": "secondary"
-    },
-    {
-      "id": "accent_icon",
-      "role": "icon",
-      "relativeRect": {
-        "x": 0.9166666666666666,
-        "y": 0.08333333333333333,
-        "w": 0.08333333333333333,
-        "h": 0.08333333333333333
-      },
-      "alignment": "center",
-      "importance": "tertiary",
-      "iconHint": "arrow-right"
     }
   ],
   "supportedAspects": [
@@ -81,6 +68,44 @@
   "grid": {
     "columns": 12,
     "safeMargin": 64
+  },
+  "constraints": {
+    "regions": {
+      "product": {
+        "maxLines": 0,
+        "maxChars": 0,
+        "visualWeight": 0.35,
+        "maxFontScale": "hero"
+      },
+      "headline": {
+        "maxLines": 3,
+        "maxChars": 72,
+        "preferredLineCount": 2,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.4,
+        "avoidOverlapWith": [
+          "product"
+        ]
+      },
+      "body": {
+        "maxLines": 4,
+        "maxChars": 160,
+        "preferredLineCount": 3,
+        "minFontScale": "caption",
+        "maxFontScale": "body",
+        "visualWeight": 0.15
+      },
+      "cta": {
+        "maxLines": 1,
+        "maxChars": 28,
+        "preferredLineCount": 1,
+        "minFontScale": "body",
+        "maxFontScale": "h3",
+        "visualWeight": 0.1,
+        "minDistanceFromEdge": 48
+      }
+    }
   },
   "reference": {
     "source": "manual",

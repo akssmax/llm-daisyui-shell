@@ -17,12 +17,19 @@ type Region = {
   importance: string
 }
 
+type RegionConstraint = {
+  maxChars?: number
+  visualWeight?: number
+  avoidOverlapWith?: string[]
+}
+
 type Layout = {
   id: string
   category: string
   archetype: string
   grid: { columns: number; safeMargin: number }
   regions: Region[]
+  constraints?: { regions: Record<string, RegionConstraint> }
 }
 
 const COL = 1 / 12
@@ -70,6 +77,28 @@ for (const file of readdirSync(layoutsDir).filter((f) => f.endsWith(".json"))) {
           fail(`${layout.id}: regions ${regions[i]!.id} & ${regions[j]!.id} overlap >15%`)
         }
       }
+    }
+  }
+
+  const constraints = layout.constraints?.regions
+  if (!constraints) {
+    fail(`${layout.id}: missing constraints.regions`)
+  } else {
+    const regionIds = new Set(regions.map((r) => r.id))
+    let weightSum = 0
+    for (const r of regions) {
+      const c = constraints[r.id]
+      if (!c) fail(`${layout.id}/${r.id}: missing region constraint`)
+      if (r.role !== "icon" && r.role !== "image" && (c?.maxChars === undefined || c.maxChars <= 0)) {
+        fail(`${layout.id}/${r.id}: text region needs maxChars`)
+      }
+      weightSum += c?.visualWeight ?? 0
+      for (const other of c?.avoidOverlapWith ?? []) {
+        if (!regionIds.has(other)) fail(`${layout.id}/${r.id}: avoidOverlapWith unknown region ${other}`)
+      }
+    }
+    if (Math.abs(weightSum - 1) > 0.2) {
+      fail(`${layout.id}: visual weights sum ${weightSum.toFixed(2)} (expected ~1)`)
     }
   }
 }

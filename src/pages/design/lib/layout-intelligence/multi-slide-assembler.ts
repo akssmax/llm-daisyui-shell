@@ -24,6 +24,7 @@ function buildPageFromRegions(
     pageWidth: number
     pageHeight: number
     pageId: string
+    tokenPresetId?: string
   },
 ): DesignPage {
   const doc = assembleDocumentFromRegionContents(layout, contents, {
@@ -32,6 +33,7 @@ function buildPageFromRegions(
     pageWidth: opts.pageWidth,
     pageHeight: opts.pageHeight,
     pageId: opts.pageId,
+    tokenPresetId: opts.tokenPresetId,
   })
   return doc.pages[0]!
 }
@@ -66,6 +68,7 @@ export function assembleMultiSlideDocument(
         pageWidth: dims.width,
         pageHeight: dims.height,
         pageId: `pg${nanoid(6)}`,
+        tokenPresetId: opts.tokenPresetId,
       }),
     )
   }

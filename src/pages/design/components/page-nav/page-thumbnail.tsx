@@ -108,6 +108,19 @@ function ThumbnailElement({ el }: { el: DesignElement }) {
     )
   }
 
+  if (el.kind === "silhouette") {
+    return (
+      <div
+        style={{
+          ...base,
+          backgroundColor: el.color ?? "#6366F1",
+          borderRadius: 8,
+          opacity: 0.85,
+        }}
+      />
+    )
+  }
+
   if (el.kind === "icon") {
     return (
       <div

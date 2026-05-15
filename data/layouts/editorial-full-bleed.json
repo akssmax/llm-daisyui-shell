@@ -57,6 +57,35 @@
     "columns": 12,
     "safeMargin": 64
   },
+  "constraints": {
+    "regions": {
+      "image": {
+        "maxLines": 0,
+        "maxChars": 0,
+        "visualWeight": 0.35,
+        "maxFontScale": "hero"
+      },
+      "headline": {
+        "maxLines": 3,
+        "maxChars": 72,
+        "preferredLineCount": 2,
+        "minFontScale": "h2",
+        "maxFontScale": "hero",
+        "visualWeight": 0.4,
+        "avoidOverlapWith": [
+          "image"
+        ]
+      },
+      "body": {
+        "maxLines": 4,
+        "maxChars": 160,
+        "preferredLineCount": 3,
+        "minFontScale": "caption",
+        "maxFontScale": "body",
+        "visualWeight": 0.15
+      }
+    }
+  },
   "reference": {
     "source": "manual",
     "archetype": "full-bleed-image",

@@ -4,7 +4,9 @@ import type Konva from "konva"
 import type { DesignElement, ImageElement } from "../../types"
 import { fontFamilyForKonva } from "../../lib/design-fonts"
 import { konvaFontStyleFromTextElement } from "../../lib/design-text-style"
+import { AgentSilhouetteKonva } from "./agent-silhouette-konva"
 import { LucideKonvaIcon } from "./lucide-konva-icon"
+import { PatternFillRect } from "./pattern-fill-rect"
 
 type Props = {
   element: DesignElement
@@ -159,11 +161,38 @@ export const DesignElementNode = memo(
             color={element.color}
             width={element.width}
             height={element.height}
+            strokeWidth={element.strokeWidth}
           />
           <ElementHitOverlay width={element.width} height={element.height} locked={locked} />
         </Group>
       )
     }
+
+    if (element.kind === "silhouette") {
+      return (
+        <Group
+          ref={ref}
+          id={element.id}
+          x={element.x}
+          y={element.y}
+          width={element.width}
+          height={element.height}
+          rotation={element.rotation}
+          opacity={element.opacity}
+          {...bind}
+        >
+          <AgentSilhouetteKonva
+            shapeName={element.shapeName}
+            color={element.color}
+            width={element.width}
+            height={element.height}
+          />
+          <ElementHitOverlay width={element.width} height={element.height} locked={locked} />
+        </Group>
+      )
+    }
+
+    const shapePattern = element.kind === "shape" ? element.patternFill : undefined
 
     // shape
     const stroke = element.stroke
@@ -340,17 +369,28 @@ export const DesignElementNode = memo(
         opacity={element.opacity}
         {...bind}
       >
-        <Rect
-          x={0}
-          y={0}
-          width={element.width}
-          height={element.height}
-          fill={element.fill}
-          stroke={stroke}
-          strokeWidth={sw}
-          cornerRadius={element.borderRadius ?? 0}
-          listening={false}
-        />
+        {shapePattern ? (
+          <PatternFillRect
+            width={element.width}
+            height={element.height}
+            fill={element.fill}
+            patternId={shapePattern.patternId}
+            patternColor={shapePattern.patternColor}
+            cornerRadius={element.borderRadius ?? 0}
+          />
+        ) : (
+          <Rect
+            x={0}
+            y={0}
+            width={element.width}
+            height={element.height}
+            fill={element.fill}
+            stroke={stroke}
+            strokeWidth={sw}
+            cornerRadius={element.borderRadius ?? 0}
+            listening={false}
+          />
+        )}
         <ElementHitOverlay width={element.width} height={element.height} locked={locked} />
       </Group>
     )

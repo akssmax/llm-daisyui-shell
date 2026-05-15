@@ -1,9 +1,11 @@
 import { nanoid } from "nanoid"
 import type { DesignMemoryRecord, LayoutMemorySignals } from "./types"
+import { recordBanditReward } from "./design-bandit"
 
 const DB_NAME = "design-intelligence-memory"
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE = "records"
+const BANDIT_STORE = "bandit_arms"
 const MAX_RECORDS = 500
 const DECAY_HALF_LIFE_MS = 90 * 24 * 60 * 60 * 1000
 
@@ -20,6 +22,9 @@ function openDb(): Promise<IDBDatabase> {
         os.createIndex("category", "category", { unique: false })
         os.createIndex("timestamp", "timestamp", { unique: false })
       }
+      if (!db.objectStoreNames.contains(BANDIT_STORE)) {
+        db.createObjectStore(BANDIT_STORE, { keyPath: "key" })
+      }
     }
   })
 }
@@ -31,12 +36,13 @@ function decayWeight(timestamp: number): number {
 
 export async function recordDesignMemory(
   record: Omit<DesignMemoryRecord, "id" | "timestamp">,
-): Promise<void> {
-  if (typeof indexedDB === "undefined") return
+): Promise<string> {
+  if (typeof indexedDB === "undefined") return ""
   const db = await openDb()
+  const id = nanoid()
   const full: DesignMemoryRecord = {
     ...record,
-    id: nanoid(),
+    id,
     timestamp: Date.now(),
   }
   await new Promise<void>((resolve, reject) => {
@@ -47,6 +53,7 @@ export async function recordDesignMemory(
   })
   db.close()
   await pruneOldRecords()
+  return id
 }
 
 async function pruneOldRecords(): Promise<void> {
@@ -77,12 +84,24 @@ function getAllRecords(db: IDBDatabase): Promise<DesignMemoryRecord[]> {
   })
 }
 
-export async function getLayoutMemorySignals(category?: string): Promise<LayoutMemorySignals> {
-  if (typeof indexedDB === "undefined") return { layoutScores: {} }
+export async function getDesignMemoryById(id: string): Promise<DesignMemoryRecord | null> {
+  if (typeof indexedDB === "undefined" || !id) return null
   const db = await openDb()
-  const all = await getAllRecords(db)
+  const record = await new Promise<DesignMemoryRecord | undefined>((resolve, reject) => {
+    const tx = db.transaction(STORE, "readonly")
+    const req = tx.objectStore(STORE).get(id)
+    req.onsuccess = () => resolve(req.result as DesignMemoryRecord | undefined)
+    req.onerror = () => reject(req.error)
+  })
   db.close()
+  return record ?? null
+}
 
+function aggregateScores(
+  all: DesignMemoryRecord[],
+  category: string | undefined,
+  field: "layoutId" | "stylePresetId" | "tokenPresetId",
+): Record<string, number> {
   const scores: Record<string, number> = {}
   for (const r of all) {
     if (category && r.category !== category) continue
@@ -92,9 +111,54 @@ export async function getLayoutMemorySignals(category?: string): Promise<LayoutM
     else if (r.applied && r.critiqueScore >= 70) signal += 0.5
     else if (r.applied) signal += 0.2
     signal *= decayWeight(r.timestamp)
-    scores[r.layoutId] = (scores[r.layoutId] ?? 0) + signal
+    const key = r[field]
+    scores[key] = (scores[key] ?? 0) + signal
   }
-  return { layoutScores: scores }
+  return scores
+}
+
+export async function getLayoutMemorySignals(category?: string): Promise<LayoutMemorySignals> {
+  if (typeof indexedDB === "undefined") return { layoutScores: {} }
+  const db = await openDb()
+  const all = await getAllRecords(db)
+  db.close()
+  return {
+    layoutScores: aggregateScores(all, category, "layoutId"),
+    styleScores: aggregateScores(all, category, "stylePresetId"),
+    tokenScores: aggregateScores(all, category, "tokenPresetId"),
+  }
+}
+
+export async function rateDesignGeneration(
+  generationId: string,
+  rating: 1 | -1,
+  banditContextKey?: string,
+): Promise<void> {
+  if (typeof indexedDB === "undefined") return
+  const db = await openDb()
+  const record = await new Promise<DesignMemoryRecord | undefined>((resolve, reject) => {
+    const tx = db.transaction(STORE, "readonly")
+    const req = tx.objectStore(STORE).get(generationId)
+    req.onsuccess = () => resolve(req.result as DesignMemoryRecord | undefined)
+    req.onerror = () => reject(req.error)
+  })
+  if (record) {
+    record.userRating = rating
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite")
+      tx.objectStore(STORE).put(record)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    if (banditContextKey) {
+      await recordBanditReward(
+        banditContextKey,
+        record.layoutId,
+        rating === 1 ? 1 : -0.5,
+      )
+    }
+  }
+  db.close()
 }
 
 export async function updateDesignMemoryRating(

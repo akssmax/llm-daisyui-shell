@@ -4,6 +4,7 @@ import { Slider } from "@/components/ui/slider"
 import type { ShapeElement } from "../../types"
 import { useDesignStore } from "../../store/design-store"
 import { DesignColorPicker } from "./design-color-picker"
+import { PATTERN_IDS } from "../../lib/fill-pattern-catalog"
 
 interface Props {
   element: ShapeElement
@@ -18,10 +19,50 @@ export function ShapeProperties({ element, pageId }: Props) {
   return (
     <div className="flex flex-col gap-3 p-3">
       {element.shape !== "line" && element.shape !== "arrow" ? (
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs">Fill color</Label>
-          <DesignColorPicker value={element.fill === "transparent" ? "#ffffff" : element.fill} onChange={(hex) => update({ fill: hex })} />
-        </div>
+        <>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs">Fill color</Label>
+            <DesignColorPicker value={element.fill === "transparent" ? "#ffffff" : element.fill} onChange={(hex) => update({ fill: hex })} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs">Pattern fill</Label>
+            <select
+              value={element.patternFill?.patternId ?? ""}
+              onChange={(e) => {
+                const patternId = e.target.value
+                if (!patternId) {
+                  update({ patternFill: undefined })
+                  return
+                }
+                update({
+                  patternFill: {
+                    patternId,
+                    patternColor: element.patternFill?.patternColor ?? "#94A3B8",
+                  },
+                })
+              }}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+            >
+              <option value="">None</option>
+              {PATTERN_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+          </div>
+          {element.patternFill ? (
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">Pattern color</Label>
+              <DesignColorPicker
+                value={element.patternFill.patternColor}
+                onChange={(hex) =>
+                  update({ patternFill: { ...element.patternFill!, patternColor: hex } })
+                }
+              />
+            </div>
+          ) : null}
+        </>
       ) : null}
 
       <div className="flex flex-col gap-1">

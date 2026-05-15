@@ -1,51 +1,60 @@
 import type { DesignAiResponse, DesignDocument } from "../../types"
 import { safePageElements } from "../safe-page-elements"
 import type { DesignAgentPhaseTrace } from "../design-agent-orchestrator"
-import type { DesignTokenBundle, IntentPlanPayload, LayoutTree } from "../design-agent-schemas"
+import type { DesignTokenBundle, LayoutTree } from "../design-agent-schemas"
 import {
   parseContentMap,
   parseContentMapSlides,
+  parseContentStructure,
   parseIntentPlan,
   parseJsonObjectFromModel,
   parseLayoutSelect,
   parseTailwindThemeFromDesignSystem,
+  type ContentStructure,
+  type RegionContentPayload,
 } from "../design-agent-schemas"
 import { parseRegionContentsCompose } from "../design-compose-assembler"
 import { deterministicRepairElements, validateDesignDocument } from "../design-validate"
 import {
   buildContentMapPhasePrompt,
+  buildContentMapRefinementPrompt,
   buildContentMapRetryPrompt,
+  buildContentStructurePhasePrompt,
   buildDesignSystemPhasePrompt,
   buildIntentPlanSystemPrompt,
   buildLayoutSelectPhasePrompt,
 } from "../design-phase-prompts"
 import type { RunDesignAgentTurnOptions } from "../design-agent-orchestrator"
 import { runJsonPhase } from "../design-agent-orchestrator-helpers"
-import {
-  getLayoutById,
-  getTokenPresetById,
-  layoutPatternToLayoutTree,
-  tokenPresetToBundle,
-} from "./layout-catalog"
+import { getLayoutById, getTokenPresetById, tokenPresetToBundle } from "./layout-catalog"
 import { buildRetrievalQueryFromIntent, retrieveLayouts } from "./layout-retrieval"
 import { getLayoutMemorySignals, hashPrompt, recordDesignMemory } from "./design-memory-store"
 import { critiqueDesign } from "./design-critic"
 import { assembleMultiSlideDocument } from "./multi-slide-assembler"
 import {
-  inferDocumentType,
   inferSlideCount,
   inferSlidesToAdd,
-  pageDimensionsForIntent,
+  inferTargetSlideIndex,
+  mergeEditedPageIntoDocument,
+  resolveCanvasForTurn,
 } from "./slide-utils"
+import { applyCanvasSpecToDocument } from "./canvas-spec"
+import { parsePatternId } from "../fill-pattern-catalog"
 import { pickStylePresetForIntent } from "./style-auto-pick"
 import { buildTailwindTokenBundle, normalizeAccentHue, normalizeThemeMode } from "./tailwind-theme-builder"
 import type { DesignTokensPreset } from "./types"
 import {
-  assembleDocumentFromRegionContents,
-  type RegionContent,
-} from "../design-compose-assembler"
-import { runFullQualityPipeline } from "./design-auto-fix"
+  assembleWithRefinement,
+  formatCritiqueIssuesForPrompt,
+  formatViolationsForPrompt,
+  passesCriticGate,
+} from "./design-refinement-loop"
+import { validateContentAgainstConstraints } from "./constraint-validator"
 import type { DesignVariant } from "./types"
+import { buildContentProfile } from "./content-profile"
+import { buildBanditContextKey, initBanditCache, recordBanditReward } from "./design-bandit"
+import { layoutPatternToLayoutTree as patternToTree, selectLayoutForContent } from "./layout-fit-scorer"
+import { bindRegionsToLayout, bindSlidesToLayout } from "./region-binder"
 
 export type IntelligenceTurnResult = {
   response: DesignAiResponse
@@ -55,6 +64,7 @@ export type IntelligenceTurnResult = {
   selectedLayoutId?: string
   tokenPresetId?: string
   critiqueScore?: number
+  generationId?: string
 }
 
 function documentHasElements(doc: DesignDocument | null): boolean {
@@ -63,23 +73,6 @@ function documentHasElements(doc: DesignDocument | null): boolean {
     if (safePageElements(p).length > 0) return true
   }
   return false
-}
-
-async function rulePickLayout(
-  intentPlan: IntentPlanPayload,
-  userPrompt: string,
-): Promise<{ layoutId: string; layout: LayoutTree; confidence: number } | null> {
-  const memorySignals = await getLayoutMemorySignals(intentPlan.intent.designType)
-  const query = buildRetrievalQueryFromIntent(userPrompt, intentPlan, { memoryBoost: memorySignals })
-  const { matches } = retrieveLayouts(query, intentPlan)
-  const top = matches[0]
-  if (!top || top.score < 20) return null
-  const pattern = top.pattern
-  return {
-    layoutId: pattern.id,
-    layout: layoutPatternToLayoutTree(pattern) as LayoutTree,
-    confidence: Math.min(top.score / 80, 1),
-  }
 }
 
 export async function runIntelligenceAgentTurn(
@@ -92,6 +85,9 @@ export async function runIntelligenceAgentTurn(
   const debugBundle: Record<string, unknown> = {}
   const userContent = opts.userMessage.trim()
   const existingDocument = store.document
+  const canvasPresetMode = store.canvasPresetMode ?? "auto"
+
+  await initBanditCache()
 
   const pushPhase = (t: DesignAgentPhaseTrace) => {
     phases.push(t)
@@ -119,13 +115,13 @@ export async function runIntelligenceAgentTurn(
     })
   }
 
-  // 1. Intent plan
+  // 1. Intent plan (+ canvas format when preset is "auto")
   const ipRaw = await run({
     phaseId: "intent_plan",
-    label: "Intent & layout plan",
-    systemPrompt: buildIntentPlanSystemPrompt(userContent),
+    label: "Intent & canvas plan",
+    systemPrompt: buildIntentPlanSystemPrompt(userContent, canvasPresetMode),
     userContent,
-    maxTokens: 1400,
+    maxTokens: 1600,
     signal: opts.signal,
     attachments: opts.attachments,
   })
@@ -139,82 +135,50 @@ export async function runIntelligenceAgentTurn(
   }
   debugBundle.intentPlan = intentPlan
 
+  const canvasSpec = resolveCanvasForTurn(userContent, intentPlan, canvasPresetMode)
+  debugBundle.canvasSpec = canvasSpec
+
+  pushPhase({
+    id: "canvas_select",
+    label: "Canvas size",
+    summary: `${canvasSpec.label} · ${canvasSpec.width}×${canvasSpec.height}`,
+    state: "complete",
+  })
+
   const slidesToAdd = inferSlidesToAdd(userContent)
   const isExtendMode = slidesToAdd > 0 && documentHasElements(existingDocument)
-  const slideCount = isExtendMode ? slidesToAdd : inferSlideCount(userContent, intentPlan)
-  const documentType = inferDocumentType(userContent, intentPlan)
-  const pageDims = pageDimensionsForIntent(userContent, intentPlan)
+  const targetSlideIndex = inferTargetSlideIndex(
+    userContent,
+    existingDocument?.pages.length,
+  )
+  const isEditPageMode =
+    targetSlideIndex !== null &&
+    documentHasElements(existingDocument) &&
+    !isExtendMode
+  const slideCount = isEditPageMode
+    ? 1
+    : isExtendMode
+      ? slidesToAdd
+      : inferSlideCount(userContent, intentPlan)
+  const documentType = canvasSpec.documentType
+  const pageDims = { width: canvasSpec.width, height: canvasSpec.height }
   debugBundle.slideCount = slideCount
   debugBundle.documentType = documentType
   debugBundle.isExtendMode = isExtendMode
+  debugBundle.isEditPageMode = isEditPageMode
+  if (isEditPageMode) {
+    debugBundle.targetSlideIndex = targetSlideIndex
+  }
   if (isExtendMode && existingDocument) {
     debugBundle.existingPageCount = existingDocument.pages.length
   }
 
-  // 2. Layout retrieval (client)
-  const memorySignals = await getLayoutMemorySignals(intentPlan.intent.designType)
-  const autoStyle = pickStylePresetForIntent(userContent, intentPlan)
-  const retrievalQuery = buildRetrievalQueryFromIntent(userContent, intentPlan, {
-    memoryBoost: memorySignals,
-    density: autoStyle?.layoutDensity,
-    hierarchy: autoStyle?.hierarchy,
-    styleTags: autoStyle?.styleTags,
-  })
-  if (slideCount > 1) {
-    retrievalQuery.category = "linkedin-carousel"
-  }
-  const retrieval = retrieveLayouts(retrievalQuery, intentPlan)
-  debugBundle.retrieval = retrieval.matches.slice(0, 5).map((m) => ({ id: m.pattern.id, score: m.score }))
-
-  pushPhase({
-    id: "layout_retrieval",
-    label: "Layout retrieval",
-    summary: `Top: ${retrieval.top3.map((l) => l.id).join(", ")}`,
-    state: "complete",
-  })
-
-  // 3. Layout select (LLM or rules)
-  let selectedLayoutId: string
-  let layout: LayoutTree
-
-  const rulePick = await rulePickLayout(intentPlan, userContent)
-  if (rulePick && rulePick.confidence >= 0.65) {
-    selectedLayoutId = rulePick.layoutId
-    layout = rulePick.layout
-    pushPhase({
-      id: "layout_select",
-      label: "Layout selection",
-      summary: `Rule pick: ${selectedLayoutId} (${Math.round(rulePick.confidence * 100)}%)`,
-      state: "complete",
-    })
-  } else {
-    const lsRaw = await run({
-      phaseId: "layout_select",
-      label: "Layout selection",
-      systemPrompt: buildLayoutSelectPhasePrompt(userContent, intentPlan, retrieval.top3),
-      userContent,
-      maxTokens: 800,
-      signal: opts.signal,
-    })
-    const lsParsed = parseLayoutSelect(parseJsonObjectFromModel(lsRaw.raw))
-    const pattern = lsParsed ? getLayoutById(lsParsed.layoutId) : retrieval.top3[0]
-    if (!pattern) {
-      return {
-        response: { kind: "message", text: "No matching layout in catalog." },
-        phases,
-        debugBundle,
-      }
-    }
-    selectedLayoutId = pattern.id
-    layout = layoutPatternToLayoutTree(pattern) as LayoutTree
-    debugBundle.layoutSelectRaw = lsRaw.raw
-  }
-
-  // 4. Design system / tokens (named preset OR Tailwind accent from LLM)
+  // 2. Design system / tokens (before layout)
   let tokens: DesignTokenBundle
-  let tokenPresetId = autoStyle?.tokenPresetId
+  let tokenPresetId = pickStylePresetForIntent(userContent, intentPlan)?.tokenPresetId
   let activeTokenPreset: DesignTokensPreset | undefined
   let enforceTailwindOnly = false
+  const autoStyle = pickStylePresetForIntent(userContent, intentPlan)
 
   const presetFromStyle = tokenPresetId ? getTokenPresetById(tokenPresetId) : null
   if (presetFromStyle) {
@@ -254,16 +218,41 @@ export async function runIntelligenceAgentTurn(
     })
   }
 
-  // 5. Content map
+  // 3. Content structure (single-slide)
+  let contentStructure: ContentStructure | null = null
+  if (slideCount === 1) {
+    const csRaw = await run({
+      phaseId: "content_structure",
+      label: "Content structure",
+      systemPrompt: buildContentStructurePhasePrompt(userContent, intentPlan),
+      userContent,
+      maxTokens: 1200,
+      signal: opts.signal,
+    })
+    const csObj = parseJsonObjectFromModel(csRaw.raw)
+    contentStructure = csObj ? parseContentStructure(csObj) : null
+    debugBundle.contentStructure = contentStructure
+  }
+
+  // 4. Content map (layout-agnostic)
   const contentMaxTokens = slideCount > 1 ? 8000 : 4000
-  const contentMapUserContent = isExtendMode
-    ? `Add ${slideCount} NEW slides to the deck. Write copy only for these new slides (slideIndex 0..${slideCount - 1}). Do not repeat existing slides.\n\n${userContent}`
-    : userContent
+  const contentMapUserContent = isEditPageMode
+    ? `Replace ALL content on slide ${targetSlideIndex! + 1} only (1-based). Other slides must not be mentioned. Design a fresh layout for:\n\n${userContent}`
+    : isExtendMode
+      ? `Add ${slideCount} NEW slides to the deck. Write copy only for these new slides (slideIndex 0..${slideCount - 1}). Do not repeat existing slides.\n\n${userContent}`
+      : userContent
 
   const cmRaw = await run({
     phaseId: "content_map",
     label: slideCount > 1 ? `Content mapping (${slideCount} slides)` : "Content mapping",
-    systemPrompt: buildContentMapPhasePrompt(contentMapUserContent, intentPlan, layout, tokens, slideCount),
+    systemPrompt: buildContentMapPhasePrompt(
+      contentMapUserContent,
+      intentPlan,
+      null,
+      tokens,
+      slideCount,
+      contentStructure ?? undefined,
+    ),
     userContent: contentMapUserContent,
     maxTokens: contentMaxTokens,
     signal: opts.signal,
@@ -275,7 +264,7 @@ export async function runIntelligenceAgentTurn(
     const cmRetryRaw = await run({
       phaseId: "content_map",
       label: "Content mapping (retry)",
-      systemPrompt: buildContentMapRetryPrompt(contentMapUserContent, intentPlan, layout, tokens, slideCount),
+      systemPrompt: buildContentMapRetryPrompt(contentMapUserContent, intentPlan, null, tokens, slideCount),
       userContent: contentMapUserContent,
       maxTokens: contentMaxTokens,
       signal: opts.signal,
@@ -285,6 +274,142 @@ export async function runIntelligenceAgentTurn(
     debugBundle.contentMapRetried = true
   }
 
+  const draftSlides: RegionContentPayload[][] = []
+  if (slideCount > 1) {
+    if (!slidePayload) {
+      return {
+        response: {
+          kind: "message",
+          text: "Design agent could not map content to separate slides. The model must return a slides[] array with one entry per slide. Try again with a shorter brief.",
+        },
+        phases,
+        debugBundle,
+      }
+    }
+    for (let i = 0; i < slideCount; i++) {
+      const slide = slidePayload.slides.find((s) => s.slideIndex === i) ?? slidePayload.slides[i]
+      draftSlides.push(slide?.regionContents ?? [])
+    }
+  } else {
+    let regionContents = cmObj ? parseContentMap(cmObj) : null
+    if (!regionContents || regionContents.length === 0) {
+      regionContents = parseRegionContentsCompose(cmRaw.raw)
+    }
+    if (!regionContents || regionContents.length === 0) {
+      return {
+        response: { kind: "message", text: "Design agent could not map content to layout regions." },
+        phases,
+        debugBundle,
+      }
+    }
+    draftSlides.push(regionContents)
+  }
+
+  const contentProfile = buildContentProfile(draftSlides, slideCount)
+  debugBundle.contentProfile = contentProfile
+
+  // 5. Layout retrieval + content-aware selection
+  const memorySignals = await getLayoutMemorySignals(intentPlan.intent.designType)
+  const banditContextKey = buildBanditContextKey(
+    intentPlan.intent.designType,
+    contentProfile,
+    intentPlan.intent.tone,
+  )
+
+  const retrievalQuery = buildRetrievalQueryFromIntent(userContent, intentPlan, {
+    memoryBoost: memorySignals,
+    density: autoStyle?.layoutDensity,
+    hierarchy: autoStyle?.hierarchy,
+    styleTags: autoStyle?.styleTags,
+    aspectRatio: { w: pageDims.width, h: pageDims.height },
+  })
+  if (slideCount > 1) {
+    retrievalQuery.category = "linkedin-carousel"
+  } else if (canvasSpec.documentType === "document" || canvasSpec.format.includes("a4")) {
+    retrievalQuery.category = "editorial-poster"
+  } else if (canvasSpec.documentType === "slide") {
+    retrievalQuery.category = "presentation-slide"
+  }
+  const retrieval = retrieveLayouts(retrievalQuery, intentPlan)
+  debugBundle.retrieval = retrieval.matches.slice(0, 5).map((m) => ({ id: m.pattern.id, score: m.score }))
+
+  pushPhase({
+    id: "layout_retrieval",
+    label: "Layout retrieval",
+    summary: `Top: ${retrieval.top3.map((l) => l.id).join(", ")}`,
+    state: "complete",
+  })
+
+  const fitPick = selectLayoutForContent({
+    intentPlan,
+    userPrompt: userContent,
+    profile: contentProfile,
+    memorySignals,
+    pageDims: { w: pageDims.width, h: pageDims.height },
+    banditContextKey,
+  })
+  debugBundle.layoutFitRanked = fitPick.ranked.slice(0, 3).map((r) => ({
+    id: r.pattern.id,
+    finalScore: r.finalScore,
+    reasons: r.reasons,
+  }))
+
+  let selectedLayoutId: string
+  let layoutPattern = fitPick.layout
+  let layout: LayoutTree = patternToTree(layoutPattern) as LayoutTree
+
+  if (fitPick.confidence >= 0.65) {
+    selectedLayoutId = fitPick.layoutId
+    pushPhase({
+      id: "layout_select",
+      label: "Layout selection",
+      summary: `Content fit: ${selectedLayoutId} (${Math.round(fitPick.confidence * 100)}%)`,
+      state: "complete",
+    })
+  } else {
+    const topCandidates = fitPick.ranked.slice(0, 3).map((r) => r.pattern)
+    const lsRaw = await run({
+      phaseId: "layout_select",
+      label: "Layout selection",
+      systemPrompt: buildLayoutSelectPhasePrompt(
+        userContent,
+        intentPlan,
+        topCandidates.length > 0 ? topCandidates : retrieval.top3,
+        contentProfile,
+      ),
+      userContent,
+      maxTokens: 800,
+      signal: opts.signal,
+    })
+    const lsParsed = parseLayoutSelect(parseJsonObjectFromModel(lsRaw.raw))
+    const pattern = lsParsed ? getLayoutById(lsParsed.layoutId) : layoutPattern
+    if (!pattern) {
+      return {
+        response: { kind: "message", text: "No matching layout in catalog." },
+        phases,
+        debugBundle,
+      }
+    }
+    selectedLayoutId = pattern.id
+    layoutPattern = pattern
+    layout = patternToTree(pattern) as LayoutTree
+    debugBundle.layoutSelectRaw = lsRaw.raw
+    pushPhase({
+      id: "layout_select",
+      label: "Layout selection",
+      summary: `LLM pick: ${selectedLayoutId}`,
+      state: "complete",
+    })
+  }
+
+  pushPhase({
+    id: "region_bind",
+    label: "Region bind",
+    summary: `Mapped copy → ${layout.regions.length} regions`,
+    state: "complete",
+  })
+
+  // 6. Assemble & refine
   pushPhase({
     id: "assemble",
     label: "Assemble & refine",
@@ -302,33 +427,11 @@ export async function runIntelligenceAgentTurn(
   }
 
   if (slideCount > 1) {
-    if (!slidePayload) {
-      debugBundle.contentMapMode = "single-fallback-blocked"
-      pushPhase({
-        id: "assemble",
-        label: "Assemble & refine",
-        summary: "Failed — invalid multi-slide content map",
-        state: "error",
-      })
-      return {
-        response: {
-          kind: "message",
-          text: "Design agent could not map content to separate slides. The model must return a slides[] array with one entry per slide. Try again with a shorter brief.",
-        },
-        phases,
-        debugBundle,
-      }
-    }
-
+    const boundSlides = bindSlidesToLayout(layoutPattern, draftSlides)
     debugBundle.contentMapMode = "multi"
-    const slides: RegionContent[][] = []
-    for (let i = 0; i < slideCount; i++) {
-      const slide = slidePayload.slides.find((s) => s.slideIndex === i) ?? slidePayload.slides[i]
-      slides.push(slide?.regionContents ?? [])
-    }
     workingDoc = assembleMultiSlideDocument(
       layout,
-      { slides, slideCount },
+      { slides: boundSlides, slideCount },
       {
         intentPlan,
         tokens,
@@ -339,38 +442,123 @@ export async function runIntelligenceAgentTurn(
       },
     )
   } else {
-    let regionContents = cmObj ? parseContentMap(cmObj) : null
-    if (!regionContents || regionContents.length === 0) {
-      regionContents = parseRegionContentsCompose(cmRaw.raw)
-    }
-    if (!regionContents || regionContents.length === 0) {
-      return {
-        response: { kind: "message", text: "Design agent could not map content to layout regions." },
-        phases,
-        debugBundle,
-      }
+    const boundContents = bindRegionsToLayout(layoutPattern, draftSlides[0] ?? [])
+    const violations = validateContentAgainstConstraints(boundContents, layout.constraints)
+    if (violations.length > 0) {
+      pushPhase({
+        id: "validate",
+        label: "Constraint validation",
+        summary: `${violations.length} issue(s) — fitting copy`,
+        state: "complete",
+      })
+      debugBundle.contentViolations = violations
     }
 
-    let doc = assembleDocumentFromRegionContents(layout, regionContents, {
+    let refinement = assembleWithRefinement({
+      layout,
+      regionContents: boundContents,
       intentPlan,
       tokens,
-      title: intentPlan.intent.designType,
       pageWidth: pageDims.width,
       pageHeight: pageDims.height,
+      pipelineOpts,
+      documentType,
     })
-    doc = { ...doc, type: documentType }
-    const refined = runFullQualityPipeline(doc, pipelineOpts)
-    workingDoc = refined.document
+
+    if (!passesCriticGate(refinement.critique)) {
+      pushPhase({
+        id: "refine_engine",
+        label: "Engine refinement",
+        summary: `Score ${refinement.critique.compositeScore} — retrying copy`,
+        state: "running",
+      })
+      const issueSummary = [
+        formatViolationsForPrompt(violations),
+        formatCritiqueIssuesForPrompt(refinement.critique),
+      ]
+        .filter(Boolean)
+        .join("\n")
+      const cmRetryRaw = await run({
+        phaseId: "refine_content",
+        label: "Content refinement",
+        systemPrompt: buildContentMapRefinementPrompt(
+          contentMapUserContent,
+          intentPlan,
+          layout,
+          tokens,
+          issueSummary,
+          contentStructure ?? undefined,
+        ),
+        userContent: contentMapUserContent,
+        maxTokens: contentMaxTokens,
+        signal: opts.signal,
+      })
+      const retryObj = parseJsonObjectFromModel(cmRetryRaw.raw)
+      const retryContents = retryObj ? parseContentMap(retryObj) : null
+      if (retryContents && retryContents.length > 0) {
+        const rebound = bindRegionsToLayout(layoutPattern, retryContents)
+        refinement = assembleWithRefinement({
+          layout,
+          regionContents: rebound,
+          intentPlan,
+          tokens,
+          pageWidth: pageDims.width,
+          pageHeight: pageDims.height,
+          pipelineOpts,
+          documentType,
+        })
+      }
+      pushPhase({
+        id: "refine_engine",
+        label: "Engine refinement",
+        summary: `Final score ${refinement.critique.compositeScore}/100`,
+        state: "complete",
+      })
+    }
+
+    workingDoc = refinement.document
+    debugBundle.refinementRounds = refinement.rounds
   }
 
-  if (isExtendMode && existingDocument) {
-    workingDoc = {
-      ...existingDocument,
-      pages: [...existingDocument.pages, ...workingDoc.pages],
-      type: existingDocument.type ?? documentType,
-      updatedAt: new Date().toISOString(),
+  if (isEditPageMode && existingDocument && targetSlideIndex !== null) {
+    const generated = workingDoc.pages[0]
+    if (generated) {
+      const sizedPage = {
+        ...generated,
+        width: canvasSpec.width,
+        height: canvasSpec.height,
+      }
+      workingDoc = mergeEditedPageIntoDocument(existingDocument, targetSlideIndex, sizedPage)
+      debugBundle.mergedPageCount = workingDoc.pages.length
     }
-    debugBundle.mergedPageCount = workingDoc.pages.length
+  } else {
+    if (isExtendMode && existingDocument) {
+      workingDoc = {
+        ...existingDocument,
+        pages: [...existingDocument.pages, ...workingDoc.pages],
+        type: existingDocument.type ?? documentType,
+        updatedAt: new Date().toISOString(),
+      }
+      debugBundle.mergedPageCount = workingDoc.pages.length
+    }
+    workingDoc = applyCanvasSpecToDocument(workingDoc, canvasSpec)
+  }
+  const pagePatternMatch = userContent.match(/pattern\s*[:=]\s*([a-z0-9-]+)/i)
+  const pagePatternId = pagePatternMatch?.[1] ? parsePatternId(pagePatternMatch[1]) : null
+  if (pagePatternId) {
+    const patternColor = tokens.tokens.colors.accent ?? "#94A3B8"
+    workingDoc = {
+      ...workingDoc,
+      pages: workingDoc.pages.map((p) => ({
+        ...p,
+        backgroundPattern: {
+          patternId: pagePatternId,
+          color: patternColor,
+          backgroundColor: p.backgroundColor,
+        },
+      })),
+    }
+    debugBundle.pagePattern = pagePatternId
   }
 
   workingDoc = {
@@ -392,6 +580,13 @@ export async function runIntelligenceAgentTurn(
   })
 
   pushPhase({
+    id: "assemble",
+    label: "Assemble & refine",
+    summary: `Done · ${workingDoc.pages.length} slide(s)`,
+    state: "complete",
+  })
+
+  pushPhase({
     id: "finalize",
     label: "Finalize",
     summary: `${selectedLayoutId} · ${workingDoc.pages.length} slide(s)`,
@@ -401,14 +596,7 @@ export async function runIntelligenceAgentTurn(
   debugBundle.validation = validation
   debugBundle.critique = critique
 
-  useDesignStore.setState({
-    lastLayoutId: selectedLayoutId,
-    lastCritiqueScore: critique.compositeScore,
-    regenerationMode: null,
-    designVariants: null,
-  })
-
-  void recordDesignMemory({
+  const generationId = await recordDesignMemory({
     layoutId: selectedLayoutId,
     stylePresetId: autoStyle?.id ?? "default",
     tokenPresetId: tokenPresetId ?? "modern-saas",
@@ -419,7 +607,26 @@ export async function runIntelligenceAgentTurn(
     userRating: null,
   })
 
-  const assistantNote = `${workingDoc.pages.length} slide(s) · Layout: ${selectedLayoutId} · Quality: ${critique.compositeScore}/100`
+  const criticReward =
+    critique.compositeScore >= 70 ? 0.3 : critique.compositeScore < 60 ? -0.2 : 0
+  if (criticReward !== 0) {
+    await recordBanditReward(banditContextKey, selectedLayoutId, criticReward)
+  }
+
+  useDesignStore.setState({
+    lastLayoutId: selectedLayoutId,
+    lastCritiqueScore: critique.compositeScore,
+    lastGenerationId: generationId || null,
+    lastBanditContextKey: banditContextKey,
+    lastStylePresetId: autoStyle?.id ?? null,
+    lastTokenPresetId: tokenPresetId ?? null,
+    regenerationMode: null,
+    designVariants: null,
+  })
+
+  const assistantNote = isEditPageMode
+    ? `Updated slide ${targetSlideIndex! + 1} · Layout: ${selectedLayoutId} · Quality: ${critique.compositeScore}/100`
+    : `${workingDoc.pages.length} slide(s) · Layout: ${selectedLayoutId} · Quality: ${critique.compositeScore}/100`
 
   return {
     response: {
@@ -432,5 +639,6 @@ export async function runIntelligenceAgentTurn(
     selectedLayoutId,
     tokenPresetId,
     critiqueScore: critique.compositeScore,
+    generationId: generationId || undefined,
   }
 }

@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react"
-import { useShallow } from "zustand/react/shallow"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -16,15 +15,8 @@ import { DesignToolbar } from "./components/toolbar/design-toolbar"
 import { ExportMenu } from "./components/toolbar/export-menu"
 import { PageNavigator } from "./components/page-nav/page-navigator"
 import { FloatingDesignProperties } from "./components/properties/floating-design-properties"
-import { DesignTextQuickStrip } from "./components/canvas/design-text-quick-strip"
-
-function isTypingFocusedTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  if (target.isContentEditable) return true
-  const tag = target.tagName
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true
-  return Boolean(target.closest('[contenteditable="true"]'))
-}
+// import { DesignTextQuickStrip } from "./components/canvas/design-text-quick-strip"
+import { useDesignKeyboardShortcuts } from "./hooks/use-design-keyboard-shortcuts"
 
 interface Props {
   onDocumentChange?: (doc: DesignDocument) => void
@@ -35,61 +27,7 @@ export function DesignPage({ onDocumentChange }: Props) {
   const document = useDesignStore((s) => s.document)
   useDesignDocumentFonts(document)
 
-  const { setActiveTool, setShapeToolVariant, clearSelection } = useDesignStore(
-    useShallow((s) => ({
-      setActiveTool: s.setActiveTool,
-      setShapeToolVariant: s.setShapeToolVariant,
-      clearSelection: s.clearSelection,
-    })),
-  )
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (isTypingFocusedTarget(e.target)) return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
-
-      if (e.code === "Space") {
-        if (e.repeat) return
-        e.preventDefault()
-        setActiveTool("hand")
-        return
-      }
-
-      if (e.shiftKey) return
-
-      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key
-      if (k === "v") {
-        e.preventDefault()
-        setActiveTool("select")
-        return
-      }
-      if (k === "h") {
-        e.preventDefault()
-        setActiveTool("hand")
-        return
-      }
-      if (k === "t") {
-        e.preventDefault()
-        setActiveTool("text")
-        return
-      }
-      if (k === "r") {
-        e.preventDefault()
-        setShapeToolVariant("rectangle")
-        setActiveTool("shape")
-        return
-      }
-      if (e.key === "Escape") {
-        e.preventDefault()
-        clearSelection()
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown)
-    return () => {
-      window.removeEventListener("keydown", onKeyDown)
-    }
-  }, [clearSelection, setActiveTool, setShapeToolVariant])
+  useDesignKeyboardShortcuts()
 
   useEffect(() => {
     if (document) onDocumentChange?.(document)
@@ -114,7 +52,7 @@ export function DesignPage({ onDocumentChange }: Props) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <DesignTextQuickStrip />
+          {/* <DesignTextQuickStrip /> — restore when header quick edit returns */}
           <DesignToolbar />
           <ExportMenu canvasRef={canvasRef} />
         </div>

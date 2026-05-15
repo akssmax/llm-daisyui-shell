@@ -3,7 +3,8 @@ import type { DesignDocument, DesignElement, Theme } from "../types"
 import type { DesignTokenBundle, IntentPlanPayload, LayoutRegion, LayoutTree } from "./design-agent-schemas"
 import { coerceElement, tryParseDesignCandidate } from "./design-json-parser"
 import { parseContentMap, parseJsonObjectFromModel } from "./design-agent-schemas"
-import { extractIconNameFromText, normalizeIconName } from "./lucide-icon-registry"
+import { planComposition } from "./layout-intelligence/composition-planner"
+import { getTokenPresetById } from "./layout-intelligence/layout-catalog"
 
 const PAGE_W = 1080
 const PAGE_H = 1080
@@ -30,6 +31,7 @@ export type AssembleDocumentOptions = {
   pageId?: string
   pageWidth?: number
   pageHeight?: number
+  tokenPresetId?: string
 }
 
 /** Build a full DesignDocument shell from a flat elements array (elements-only compose). */
@@ -84,7 +86,8 @@ export type RegionContent = {
   fontSize?: number
   fontWeight?: string
   textAlign?: "left" | "center" | "right"
-  kind?: "text" | "shape" | "icon"
+  kind?: "text" | "shape" | "icon" | "silhouette"
+  shapeName?: string
   fill?: string
   iconName?: string
   color?: string
@@ -112,70 +115,53 @@ export function regionToPixelBox(
   }
 }
 
-/** Build elements from layout regions + per-region text/content from a compact LLM response. */
-export function assembleDocumentFromRegionContents(
-  layout: LayoutTree,
-  contents: RegionContent[],
-  opts: AssembleDocumentOptions,
-): DesignDocument {
-  const margin = opts.intentPlan.plan.grid.safeMargin ?? 64
-  const pw = opts.pageWidth ?? PAGE_W
-  const ph = opts.pageHeight ?? PAGE_H
-  const tokens = opts.tokens
-  const hierarchy = opts.intentPlan.plan.visualHierarchy
-  const contentById = new Map(contents.map((c) => [c.regionId, c]))
-
+/** Render a composition plan into Konva-ready elements. */
+export function renderCompositionPlan(
+  plan: import("./layout-intelligence/composition-planner").CompositionPlan,
+): DesignElement[] {
   const elements: DesignElement[] = []
   let z = 1
-
-  for (const region of layout.regions) {
-    const box = regionToPixelBox(region, pw, ph, margin)
-    const rc = contentById.get(region.id)
-    const role = region.role.toLowerCase()
-    const isIconRegion = role === "icon" || rc?.kind === "icon"
-
-    const iconFromText = rc?.content ? extractIconNameFromText(rc.content) : null
-
-    if (isIconRegion || iconFromText) {
-      const rawName = rc?.iconName ?? rc?.content ?? ""
-      const iconName = isIconRegion ? normalizeIconName(rawName) : iconFromText
-      if (!iconName) continue
-      const iconSize = snap8(Math.min(box.width, box.height, 64))
-      const accent = tokens.tokens.colors.accent ?? tokens.tokens.colors.textPrimary ?? "#4F46E5"
+  for (const spec of plan.regions) {
+    if (spec.kind === "icon") {
       elements.push({
         id: `el${nanoid(6)}`,
         kind: "icon",
-        iconName,
-        color: rc?.color ?? accent,
-        x: box.x + (box.width - iconSize) / 2,
-        y: box.y + (box.height - iconSize) / 2,
-        width: iconSize,
-        height: iconSize,
+        iconName: spec.iconName,
+        color: spec.color,
+        strokeWidth: spec.strokeWidth,
+        x: spec.box.x,
+        y: spec.box.y,
+        width: spec.box.width,
+        height: spec.box.height,
         rotation: 0,
         zIndex: z++,
         opacity: 1,
       })
-      continue
-    }
-
-    if (!rc?.content?.trim()) continue
-
-    const isHeading =
-      role.includes("head") || role.includes("title") || hierarchy[0]?.toLowerCase() === region.role.toLowerCase()
-    const fontSize = rc.fontSize ?? (isHeading ? 48 : 24)
-    const fontFamily = isHeading ? tokens.tokens.headingFont : tokens.tokens.bodyFont
-    const color = tokens.tokens.colors.textPrimary ?? "#0F172A"
-
-    if (rc.kind === "shape" || role.includes("bg") || role.includes("background")) {
+    } else if (spec.kind === "silhouette") {
+      elements.push({
+        id: `el${nanoid(6)}`,
+        kind: "silhouette",
+        shapeName: spec.shapeName,
+        color: spec.color,
+        x: spec.box.x,
+        y: spec.box.y,
+        width: spec.box.width,
+        height: spec.box.height,
+        rotation: 0,
+        zIndex: z++,
+        opacity: 1,
+      })
+    } else if (spec.kind === "shape") {
       elements.push({
         id: `el${nanoid(6)}`,
         kind: "shape",
         shape: "rectangle",
-        fill: rc.fill ?? tokens.tokens.colors.surface ?? "#E2E8F0",
-        x: box.x,
-        y: box.y,
-        width: box.width,
-        height: box.height,
+        fill: spec.fill,
+        ...(spec.patternFill ? { patternFill: spec.patternFill } : {}),
+        x: spec.box.x,
+        y: spec.box.y,
+        width: spec.box.width,
+        height: spec.box.height,
         rotation: 0,
         zIndex: z++,
         opacity: 1,
@@ -184,26 +170,61 @@ export function assembleDocumentFromRegionContents(
       elements.push({
         id: `el${nanoid(6)}`,
         kind: "text",
-        content: rc.content.trim(),
-        fontFamily,
-        fontSize,
-        fontWeight: rc.fontWeight ?? (isHeading ? "700" : "normal"),
+        content: spec.content,
+        fontFamily: spec.fontFamily,
+        fontSize: spec.fontSize,
+        fontWeight: spec.fontWeight,
         fontStyle: "normal",
-        color,
-        textAlign: rc.textAlign ?? (role.includes("center") ? "center" : "left"),
-        lineHeight: isHeading ? 1.2 : 1.5,
-        x: box.x,
-        y: box.y,
-        width: box.width,
-        height: box.height,
+        color: spec.color,
+        textAlign: spec.textAlign,
+        lineHeight: spec.lineHeight,
+        x: spec.box.x,
+        y: spec.box.y,
+        width: spec.box.width,
+        height: spec.box.height,
         rotation: 0,
         zIndex: z++,
         opacity: 1,
       })
     }
   }
+  return elements
+}
 
-  return assembleDocumentFromElements(elements, { ...opts, pageWidth: pw, pageHeight: ph })
+/** Build elements from layout regions + per-region text/content from a compact LLM response. */
+export function assembleDocumentFromRegionContents(
+  layout: LayoutTree,
+  contents: RegionContent[],
+  opts: AssembleDocumentOptions,
+): DesignDocument {
+  const pw = opts.pageWidth ?? PAGE_W
+  const ph = opts.pageHeight ?? PAGE_H
+  const tokenPreset = opts.tokenPresetId ? getTokenPresetById(opts.tokenPresetId) : undefined
+
+  const plan = planComposition({
+    layout,
+    contents,
+    intentPlan: opts.intentPlan,
+    tokens: opts.tokens,
+    pageWidth: pw,
+    pageHeight: ph,
+    tokenPreset,
+    constraints: layout.constraints,
+  })
+
+  const elements = renderCompositionPlan(plan)
+  const doc = assembleDocumentFromElements(elements, { ...opts, pageWidth: pw, pageHeight: ph })
+  if (plan.pagePattern && doc.pages[0]) {
+    doc.pages[0] = {
+      ...doc.pages[0],
+      backgroundPattern: {
+        patternId: plan.pagePattern.patternId,
+        color: plan.pagePattern.color,
+        backgroundColor: doc.pages[0].backgroundColor,
+      },
+    }
+  }
+  return doc
 }
 
 function extractElementsArray(obj: Record<string, unknown>): unknown[] | null {

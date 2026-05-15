@@ -1,3 +1,4 @@
+import type { LayoutTree } from "../design-agent-schemas"
 import type { DesignTokensPreset, LayoutPattern, StylePreset } from "./types"
 
 const layoutModules = import.meta.glob("../../../../../data/layouts/*.json", {
@@ -53,20 +54,18 @@ export function getStylePresetById(id: string): StylePreset | undefined {
   return getAllStylePresets().find((s) => s.id === id)
 }
 
-/** Convert catalog layout regions to agent LayoutTree shape. */
-export function layoutPatternToLayoutTree(pattern: LayoutPattern): {
-  regions: Array<{
-    id: string
-    role: string
-    relativeRect: { x: number; y: number; w: number; h: number }
-  }>
-} {
+/** Convert catalog layout regions to agent LayoutTree shape (preserves metadata + constraints). */
+export function layoutPatternToLayoutTree(pattern: LayoutPattern): LayoutTree {
   return {
     regions: pattern.regions.map((r) => ({
       id: r.id,
       role: r.role,
       relativeRect: { ...r.relativeRect },
+      ...(r.alignment ? { alignment: r.alignment } : {}),
+      ...(r.importance ? { importance: r.importance } : {}),
+      ...(r.iconHint ? { iconHint: r.iconHint } : {}),
     })),
+    ...(pattern.constraints ? { constraints: pattern.constraints } : {}),
   }
 }
 

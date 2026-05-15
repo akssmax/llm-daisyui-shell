@@ -73,12 +73,15 @@ ELEMENT TYPES:
 - shape: { kind:"shape", id, x, y, width, height, rotation, zIndex, opacity, shape:"rectangle"|"ellipse"|"triangle"|"line"|"arrow"|"polygon"|"star", fill, stroke?, strokeWidth?, borderRadius?, polygonSides? (3–12, polygon only), starPoints? (3–12, star only) }
 - image: { kind:"image", id, x, y, width, height, rotation, zIndex, opacity, src, objectFit:"cover"|"contain"|"fill" }
 - icon:  { kind:"icon", id, x, y, width, height, rotation, zIndex, opacity, iconName, color }
+- silhouette: { kind:"silhouette", id, x, y, width, height, rotation, zIndex, opacity, shapeName, color } — decorative agent shapes (Heart, Burst, etc.)
+- page.backgroundPattern optional: { patternId, color, backgroundColor?, opacity? }
+- shape.patternFill optional: { patternId, patternColor }
 
 PATCH OPERATIONS:
 - { op:"create_element", pageId, element }
 - { op:"update_element", pageId, elementId, patch }
 - { op:"delete_element", pageId, elementId }
-- { op:"update_page", pageId, patch }   patch may include { backgroundColor } for the frame fill
+- { op:"update_page", pageId, patch }   patch may include { backgroundColor, backgroundPattern }
 - { op:"apply_theme", theme }
 - { op:"create_page", page }
 - { op:"delete_page", pageId }

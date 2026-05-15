@@ -1,6 +1,7 @@
 import { jsonrepair } from "jsonrepair"
 import { nanoid } from "nanoid"
 import type { DesignAiResponse, DesignDocument, DesignElement, DocumentType, PatchOp, ShapeKind, Theme } from "../types"
+import { extractSilhouetteFromText, normalizeSilhouetteName } from "./agent-silhouette-registry"
 import { extractIconNameFromText, normalizeIconName } from "./lucide-icon-registry"
 
 /** User-visible fallback when the model output is not valid design JSON (avoid Cursor-like generic copy). */
@@ -67,7 +68,22 @@ function coerceDesignDocument(doc: unknown): DesignDocument | null {
     const elements: DesignElement[] = rawEls
       .map((el, idx) => coerceElement(el, idx))
       .filter((el): el is DesignElement => el !== null)
-    return { id: pg.id, width, height, backgroundColor, elements }
+    let backgroundPattern: DesignDocument["pages"][0]["backgroundPattern"]
+    const bp = pg.backgroundPattern
+    if (bp && typeof bp === "object" && !Array.isArray(bp)) {
+      const b = bp as Record<string, unknown>
+      const patternId = typeof b.patternId === "string" ? b.patternId : ""
+      const color = typeof b.color === "string" ? b.color : ""
+      if (patternId && color) {
+        backgroundPattern = {
+          patternId,
+          color,
+          ...(typeof b.backgroundColor === "string" ? { backgroundColor: b.backgroundColor } : {}),
+          ...(typeof b.opacity === "number" ? { opacity: b.opacity } : {}),
+        }
+      }
+    }
+    return { id: pg.id, width, height, backgroundColor, ...(backgroundPattern ? { backgroundPattern } : {}), elements }
   })
   if (pages.some((p) => p === null)) return null
   return {
@@ -81,7 +97,7 @@ function coerceDesignDocument(doc: unknown): DesignDocument | null {
   }
 }
 
-const VALID_KINDS = new Set(["text", "image", "shape", "icon"])
+const VALID_KINDS = new Set(["text", "image", "shape", "icon", "silhouette"])
 const VALID_SHAPES: ShapeKind[] = ["rectangle", "ellipse", "triangle", "line", "arrow", "polygon", "star"]
 const TEXT_ALIGNS = new Set(["left", "center", "right"])
 
@@ -135,6 +151,15 @@ export function coerceElement(raw: unknown, index: number): DesignElement | null
 
   if (kind === "text") {
     const rawText = str(e.content ?? e.text ?? e.label ?? e.value, "Text")
+    const silhouetteFromText = extractSilhouetteFromText(rawText)
+    if (silhouetteFromText) {
+      return {
+        ...base,
+        kind: "silhouette",
+        shapeName: silhouetteFromText,
+        color: str(e.color ?? e.fill, "#6366F1"),
+      }
+    }
     const iconFromText = extractIconNameFromText(rawText)
     if (iconFromText) {
       return {
@@ -190,6 +215,22 @@ export function coerceElement(raw: unknown, index: number): DesignElement | null
       kind: "icon",
       iconName,
       color: str(e.color ?? e.fill, "#000000"),
+      ...(typeof e.strokeWidth === "number" ? { strokeWidth: e.strokeWidth } : {}),
+    }
+  }
+
+  if (kind === "silhouette") {
+    const rawShape = str(e.shapeName ?? e.shape ?? e.name, "Heart")
+    const shapeName =
+      normalizeSilhouetteName(rawShape) ??
+      extractSilhouetteFromText(rawShape) ??
+      normalizeSilhouetteName("Heart") ??
+      "Heart"
+    return {
+      ...base,
+      kind: "silhouette",
+      shapeName,
+      color: str(e.color ?? e.fill, "#6366F1"),
     }
   }
 

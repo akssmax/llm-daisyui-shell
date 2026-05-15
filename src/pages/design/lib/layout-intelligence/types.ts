@@ -37,6 +37,23 @@ export type RegionRole =
   | "footer"
   | "icon"
 
+export type FontScaleStep = "caption" | "body" | "h3" | "h2" | "h1" | "hero"
+
+export type RegionConstraint = {
+  maxLines?: number
+  maxChars?: number
+  preferredLineCount?: number
+  minFontScale?: FontScaleStep
+  maxFontScale?: FontScaleStep
+  visualWeight?: number
+  avoidOverlapWith?: string[]
+  minDistanceFromEdge?: number
+}
+
+export type LayoutConstraints = {
+  regions: Record<string, RegionConstraint>
+}
+
 export type LayoutRegionDef = {
   id: string
   role: RegionRole
@@ -57,6 +74,7 @@ export type LayoutPattern = {
   grid: { columns: 12; safeMargin: number }
   regions: LayoutRegionDef[]
   supportedAspects: Array<{ w: number; h: number }>
+  constraints?: LayoutConstraints
   reference?: {
     source: string
     archetype: string
@@ -130,6 +148,8 @@ export type LayoutRetrievalQuery = {
 
 export type LayoutMemorySignals = {
   layoutScores: Record<string, number>
+  styleScores?: Record<string, number>
+  tokenScores?: Record<string, number>
 }
 
 export type ScoredLayout = {

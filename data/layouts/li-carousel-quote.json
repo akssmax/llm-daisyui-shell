@@ -57,6 +57,35 @@
     "columns": 12,
     "safeMargin": 64
   },
+  "constraints": {
+    "regions": {
+      "quote": {
+        "maxLines": 5,
+        "maxChars": 200,
+        "preferredLineCount": 3,
+        "minFontScale": "h3",
+        "maxFontScale": "hero",
+        "visualWeight": 0.692
+      },
+      "attribution": {
+        "maxLines": 2,
+        "maxChars": 90,
+        "preferredLineCount": 1,
+        "minFontScale": "body",
+        "maxFontScale": "h2",
+        "visualWeight": 0.231
+      },
+      "footer": {
+        "maxLines": 1,
+        "maxChars": 60,
+        "preferredLineCount": 1,
+        "minFontScale": "caption",
+        "maxFontScale": "caption",
+        "visualWeight": 0.077,
+        "minDistanceFromEdge": 48
+      }
+    }
+  },
   "reference": {
     "source": "manual",
     "archetype": "quote-emphasis",
