@@ -113,7 +113,7 @@ function num(v: unknown, fallback: number): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback
 }
 
-function coerceElement(raw: unknown, index: number): DesignElement | null {
+export function coerceElement(raw: unknown, index: number): DesignElement | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null
   const e = raw as Record<string, unknown>
 

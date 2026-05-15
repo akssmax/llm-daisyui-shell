@@ -1,21 +1,39 @@
-import { streamChat, type AgentPhaseSsePayload } from "@/lib/llm-service"
+import { streamChat, type AgentPhaseSsePayload, type StreamChatResult } from "@/lib/llm-service"
 import type { MistralModel } from "@/lib/llm-types"
 import type { FileUIPart } from "ai"
 import type { DesignAiResponse, DesignDocument } from "../types"
 import { safePageElements } from "../lib/safe-page-elements"
 import { useDesignStore } from "../store/design-store"
 import { applyPatchesToDocument } from "../store/patch-reducer"
-import { extractJsonFromStream, tryParseDesignCandidate } from "./design-json-parser"
+import {
+  DESIGN_MODEL_PARSE_FAILED_MESSAGE,
+  DESIGN_MODEL_PARSE_TRUNCATED_MESSAGE,
+  extractJsonFromStream,
+  tryParseDesignCandidate,
+} from "./design-json-parser"
 import {
   parseDesignSystem,
   parseIntentPlan,
   parseJsonObjectFromModel,
   parseLayoutTree,
+  type DesignTokenBundle,
+  type IntentPlanPayload,
+  type LayoutTree,
 } from "./design-agent-schemas"
 import {
+  assembleDocumentFromElements,
+  assembleDocumentFromRegionContents,
+  parseElementsOnlyCompose,
+  parseRegionContentsCompose,
+} from "./design-compose-assembler"
+import {
+  buildComposeElementsOnlyPrompt,
   buildComposeFallbackPrompt,
+  buildComposeHybridPrompt,
   buildComposePhaseSystemPrompt,
+  buildComposeTruncationRetryPrompt,
   buildDesignSystemPhasePrompt,
+  buildEnrichedOneShotComposePrompt,
   buildIntentPlanSystemPrompt,
   buildLayoutTreePhasePrompt,
   buildRepairPatchesSystemPrompt,
@@ -44,6 +62,7 @@ export type RunDesignAgentTurnOptions = {
 }
 
 const REPAIR_MAX = 1
+const COMPOSE_MAX_TOKENS = 12_000
 
 const EMPTY_AGENT_CANVAS_MESSAGE =
   "Design agent finished, but nothing was applied to the canvas (0 elements). The compose step often returned patches while no document existed, or patch ops used the wrong pageId so they were ignored. Turn off Design agent for a single-shot generation, or try again with a shorter brief."
@@ -92,6 +111,71 @@ function mergeRepair(first: DesignAiResponse, repair: DesignAiResponse | null): 
   return first
 }
 
+type PhaseRunResult = {
+  raw: string
+  trace: DesignAgentPhaseTrace
+  stream: StreamChatResult
+}
+
+function isTruncatedOutput(stream: StreamChatResult, parsed: DesignAiResponse): boolean {
+  if (stream.finishReason === "length" || stream.completionStatus === "max_tokens_reached") return true
+  return parsed.kind === "message" && parsed.text === DESIGN_MODEL_PARSE_TRUNCATED_MESSAGE
+}
+
+function isParseFailure(parsed: DesignAiResponse): boolean {
+  return parsed.kind === "message" && parsed.text === DESIGN_MODEL_PARSE_FAILED_MESSAGE
+}
+
+function salvageParse(raw: string, parsed: DesignAiResponse): DesignAiResponse {
+  if (parsed.kind !== "message") return parsed
+  if (
+    !parsed.text.includes("Could not read") &&
+    !parsed.text.includes("cut off") &&
+    parsed.text !== DESIGN_MODEL_PARSE_FAILED_MESSAGE &&
+    parsed.text !== DESIGN_MODEL_PARSE_TRUNCATED_MESSAGE
+  ) {
+    return parsed
+  }
+  const retry = tryParseDesignCandidate(raw)
+  return retry ?? parsed
+}
+
+function parseComposeAlternates(
+  raw: string,
+  bundle: { intentPlan: IntentPlanPayload; tokens: DesignTokenBundle; layout: LayoutTree },
+): DesignAiResponse | null {
+  const elements = parseElementsOnlyCompose(raw)
+  if (elements && elements.length > 0) {
+    const doc = assembleDocumentFromElements(elements, {
+      intentPlan: bundle.intentPlan,
+      tokens: bundle.tokens,
+      title: bundle.intentPlan.intent.designType,
+    })
+    return { kind: "document", document: doc }
+  }
+  const regionContents = parseRegionContentsCompose(raw)
+  if (regionContents && regionContents.length > 0) {
+    const doc = assembleDocumentFromRegionContents(bundle.layout, regionContents, {
+      intentPlan: bundle.intentPlan,
+      tokens: bundle.tokens,
+      title: bundle.intentPlan.intent.designType,
+    })
+    return { kind: "document", document: doc }
+  }
+  return null
+}
+
+function composeErrorSummary(
+  stream: StreamChatResult,
+  parsed: DesignAiResponse,
+): string {
+  if (!stream.emittedTokens && stream.completionStatus === "completed") return "Empty model response"
+  if (isTruncatedOutput(stream, parsed)) return "Output truncated — JSON incomplete"
+  if (isParseFailure(parsed)) return "Invalid JSON — could not parse design reply"
+  if (parsed.kind === "message") return "Parse failed — wrong response shape"
+  return "Compose parse failed"
+}
+
 async function runJsonPhase(options: {
   phaseId: DesignAgentPhaseId
   label: string
@@ -105,11 +189,11 @@ async function runJsonPhase(options: {
   onAgentPhase?: (p: AgentPhaseSsePayload) => void
   onPhaseBuffer?: (phaseId: DesignAgentPhaseId, buffer: string) => void
   onPhaseEnd?: (t: DesignAgentPhaseTrace) => void
-}): Promise<{ raw: string; trace: DesignAgentPhaseTrace }> {
+}): Promise<PhaseRunResult> {
   const { phaseId, label, systemPrompt, userContent, model, maxTokens, signal, attachments, onToken, onAgentPhase, onPhaseBuffer, onPhaseEnd } = options
   const trace: DesignAgentPhaseTrace = { id: phaseId, label, summary: "", state: "running" }
   let buffer = ""
-  await streamChat({
+  const stream = await streamChat({
     model,
     messages: [
       { role: "system", content: systemPrompt },
@@ -137,16 +221,20 @@ async function runJsonPhase(options: {
       rawJson: "",
     }
     onPhaseEnd?.(failed)
-    return { raw: "", trace: failed }
+    return { raw: "", trace: failed, stream }
   }
+  const truncatedNote =
+    stream.finishReason === "length" || stream.completionStatus === "max_tokens_reached"
+      ? " (output limit reached)"
+      : ""
   const done: DesignAgentPhaseTrace = {
     ...trace,
     state: "complete",
-    summary: summarizeJsonKeys(buffer),
+    summary: `${summarizeJsonKeys(buffer)}${truncatedNote}`,
     rawJson: buffer.trim().length > 120_000 ? `${buffer.slice(0, 120_000)}\n…[truncated]` : buffer,
   }
   onPhaseEnd?.(done)
-  return { raw: buffer, trace: done }
+  return { raw: buffer, trace: done, stream }
 }
 
 export async function runDesignAgentTurn(opts: RunDesignAgentTurnOptions): Promise<{
@@ -263,88 +351,136 @@ export async function runDesignAgentTurn(opts: RunDesignAgentTurnOptions): Promi
     }
   }
 
+  const bundle = { intentPlan, tokens, layout }
+  const composeAttachments = opts.attachments
+
+  const parseComposeRaw = (raw: string, stream: StreamChatResult): DesignAiResponse => {
+    let parsed = extractJsonFromStream(raw)
+    parsed = salvageParse(raw, parsed)
+    if (parsed.kind === "message") {
+      const alt = parseComposeAlternates(raw, bundle)
+      if (alt) return alt
+    }
+    if (isTruncatedOutput(stream, parsed) && parsed.kind === "message") {
+      const alt = parseComposeAlternates(raw, bundle)
+      if (alt) return alt
+    }
+    return parsed
+  }
+
   const composeRaw = await run({
     phaseId: "compose",
     label: "Compose canvas",
-    systemPrompt: buildComposePhaseSystemPrompt(document, { intentPlan, tokens, layout }),
+    systemPrompt: buildComposePhaseSystemPrompt(document, bundle),
     userContent,
     model,
-    maxTokens: 10_000,
+    maxTokens: COMPOSE_MAX_TOKENS,
     signal: opts.signal,
-    attachments: opts.attachments,
+    attachments: composeAttachments,
     onToken: opts.onToken,
     onAgentPhase: opts.onAgentPhase,
     onPhaseBuffer: opts.onPhaseBuffer,
   })
   debugBundle.composeRaw = composeRaw.raw
-  let composed = extractJsonFromStream(composeRaw.raw)
-  if (
-    composed.kind === "message" &&
-    (composed.text.includes("Could not read") || composed.text.includes("cut off"))
-  ) {
-    const retry = tryParseDesignCandidate(composeRaw.raw)
-    if (retry) composed = retry
-  }
+  debugBundle.composeFinishReason = composeRaw.stream.finishReason
+  let composed = parseComposeRaw(composeRaw.raw, composeRaw.stream)
+  let lastComposeStream = composeRaw.stream
 
-  // Fallback: first compose attempt failed to parse — retry with a minimal prompt that strips
-  // the heavy document snapshot and bundle details so a small model can produce clean JSON.
-  if (composed.kind === "message") {
+  const runComposeRetry = async (label: string, systemPrompt: string, debugKey: string) => {
     debugBundle.composeFallbackTriggered = true
-    const fallbackRaw = await run({
+    const retry = await run({
       phaseId: "compose",
-      label: "Compose canvas (retry)",
-      systemPrompt: buildComposeFallbackPrompt(document, intentPlan, tokens),
+      label,
+      systemPrompt,
       userContent,
       model,
-      maxTokens: 8_000,
+      maxTokens: COMPOSE_MAX_TOKENS,
       signal: opts.signal,
+      attachments: composeAttachments,
       onToken: opts.onToken,
       onAgentPhase: opts.onAgentPhase,
       onPhaseBuffer: opts.onPhaseBuffer,
     })
-    debugBundle.composeFallbackRaw = fallbackRaw.raw
-    const fallbackResult = extractJsonFromStream(fallbackRaw.raw)
-    if (fallbackResult.kind !== "message") {
-      composed = fallbackResult
-    } else {
-      // Both attempts failed — propagate error with original trace.
-      const err: DesignAgentPhaseTrace = { ...composeRaw.trace, state: "error", summary: "Compose parse failed (both attempts)" }
-      if (phases.length > 0) phases[phases.length - 1] = err
-      opts.onPhaseComplete?.(err)
-      return { response: composed, phases, debugBundle }
-    }
+    debugBundle[debugKey] = retry.raw
+    lastComposeStream = retry.stream
+    return parseComposeRaw(retry.raw, retry.stream)
   }
 
-  // If compose returned patches but there is no base document to apply them to,
-  // retry with the fallback prompt (which explicitly asks for kind:"document").
+  // Truncation-aware retry: smaller input, same output budget.
+  if (composed.kind === "message" && isTruncatedOutput(composeRaw.stream, composed)) {
+    const truncatedRetry = await runComposeRetry(
+      "Compose canvas (truncation retry)",
+      buildComposeTruncationRetryPrompt(document, bundle),
+      "composeTruncationRetryRaw",
+    )
+    if (truncatedRetry.kind !== "message") composed = truncatedRetry
+  }
+
+  // Patches without base document → force document output.
   if (composed.kind === "patches" && !document) {
-    debugBundle.composeFallbackTriggered = true
-    const fbRaw = await run({
-      phaseId: "compose",
-      label: "Compose canvas (retry)",
-      systemPrompt: buildComposeFallbackPrompt(null, intentPlan, tokens),
-      userContent,
-      model,
-      maxTokens: 8_000,
-      signal: opts.signal,
-      onToken: opts.onToken,
-      onAgentPhase: opts.onAgentPhase,
-      onPhaseBuffer: opts.onPhaseBuffer,
-    })
-    debugBundle.composeFallbackRaw = fbRaw.raw
-    const fbResult = extractJsonFromStream(fbRaw.raw)
-    if (fbResult.kind !== "message") {
-      composed = fbResult
-    } else {
-      const err: DesignAgentPhaseTrace = { ...composeRaw.trace, state: "error", summary: "Patches without base document (fallback also failed)" }
-      if (phases.length > 0) phases[phases.length - 1] = err
-      opts.onPhaseComplete?.(err)
-      return {
-        response: { kind: "message", text: "Model returned patches but no document exists yet. Try again with a shorter brief." },
-        phases,
-        debugBundle,
-      }
+    const docRetry = await runComposeRetry(
+      "Compose canvas (retry)",
+      buildComposeFallbackPrompt(null, intentPlan, tokens, layout),
+      "composeFallbackRaw",
+    )
+    if (docRetry.kind !== "message") composed = docRetry
+  }
+
+  // Generic parse failure → improved fallback with layout + pageId.
+  if (composed.kind === "message") {
+    const fallbackResult = await runComposeRetry(
+      "Compose canvas (retry)",
+      buildComposeFallbackPrompt(document, intentPlan, tokens, layout),
+      "composeFallbackRaw",
+    )
+    if (fallbackResult.kind !== "message") composed = fallbackResult
+  }
+
+  // Elements-only compose (smaller JSON).
+  if (composed.kind === "message") {
+    const elementsRetry = await runComposeRetry(
+      "Compose canvas (elements)",
+      buildComposeElementsOnlyPrompt(bundle),
+      "composeElementsOnlyRaw",
+    )
+    if (elementsRetry.kind !== "message") composed = elementsRetry
+  }
+
+  // Hybrid: region text only, positions from layout tree.
+  if (composed.kind === "message" && layout.regions.length > 0) {
+    const hybridRetry = await runComposeRetry(
+      "Compose canvas (regions)",
+      buildComposeHybridPrompt(bundle),
+      "composeHybridRaw",
+    )
+    if (hybridRetry.kind !== "message") composed = hybridRetry
+  }
+
+  // Last resort: enriched one-shot prompt (proven path).
+  if (composed.kind === "message") {
+    const oneShotRetry = await runComposeRetry(
+      "Compose canvas (one-shot)",
+      buildEnrichedOneShotComposePrompt(document, bundle, userContent),
+      "composeOneShotRaw",
+    )
+    if (oneShotRetry.kind !== "message") composed = oneShotRetry
+  }
+
+  if (composed.kind === "message") {
+    const err: DesignAgentPhaseTrace = {
+      ...composeRaw.trace,
+      state: "error",
+      summary: composeErrorSummary(lastComposeStream, composed),
     }
+    if (phases.length > 0) phases[phases.length - 1] = err
+    opts.onPhaseComplete?.(err)
+    const userText =
+      composed.text === DESIGN_MODEL_PARSE_TRUNCATED_MESSAGE
+        ? composed.text
+        : composed.text === DESIGN_MODEL_PARSE_FAILED_MESSAGE
+          ? composed.text
+          : `Design agent could not parse the compose step (${err.summary}). Try a shorter brief or turn off Design agent.`
+    return { response: { kind: "message", text: userText }, phases, debugBundle }
   }
 
   let workingDoc: DesignDocument | null = document
@@ -354,23 +490,12 @@ export async function runDesignAgentTurn(opts: RunDesignAgentTurnOptions): Promi
     const afterPatches = applyPatchesToDocument(document, composed.patches)
     const totalElsAfter = afterPatches.pages.reduce((s, p) => s + (p.elements?.length ?? 0), 0)
     const totalElsBefore = document.pages.reduce((s, p) => s + (p.elements?.length ?? 0), 0)
-    // If patches added nothing (all pageIds were wrong), fall back to a full-document compose.
-    if (totalElsAfter === totalElsBefore && !debugBundle.composeFallbackTriggered) {
-      debugBundle.composeFallbackTriggered = true
-      const fbRaw = await run({
-        phaseId: "compose",
-        label: "Compose canvas (retry)",
-        systemPrompt: buildComposeFallbackPrompt(document, intentPlan, tokens),
-        userContent,
-        model,
-        maxTokens: 8_000,
-        signal: opts.signal,
-        onToken: opts.onToken,
-        onAgentPhase: opts.onAgentPhase,
-        onPhaseBuffer: opts.onPhaseBuffer,
-      })
-      debugBundle.composeFallbackRaw = fbRaw.raw
-      const fbResult = extractJsonFromStream(fbRaw.raw)
+    if (totalElsAfter === totalElsBefore) {
+      const fbResult = await runComposeRetry(
+        "Compose canvas (retry)",
+        buildComposeFallbackPrompt(document, intentPlan, tokens, layout),
+        "composeNoOpPatchesRaw",
+      )
       if (fbResult.kind === "document") {
         workingDoc = fbResult.document
         composed = fbResult

@@ -207,6 +207,26 @@ CURRENT DOCUMENT STATE (image data URLs are replaced with placeholders in this s
 ${docContext}`
 }
 
+/** Condensed schema for agent compose phases (~2k chars) — closes gap with one-shot without full 11k rules. */
+export const COMPOSE_SCHEMA_EXCERPT = `━━━ DESIGN JSON SCHEMA (compose) ━━━
+Output: {"kind":"document","document":DesignDocument,"assistantNote":string} OR {"kind":"patches","patches":[PatchOp,...],"assistantNote":string}
+
+DesignDocument: { id, title, type:"carousel"|"slide"|"social-post", createdAt, updatedAt, theme, pages }
+theme: { primaryColor, secondaryColor, accentColor, backgroundColor, fontFamily } — hex colors
+page: { id, width, height, backgroundColor, elements[] } — Instagram 1080×1080, LinkedIn 1080×1350, slide 1920×1080
+
+Elements (all need id, kind, x, y, width, height, rotation:0, zIndex, opacity:1):
+- text: { kind:"text", content, fontFamily, fontSize, fontWeight, fontStyle, color, textAlign, lineHeight }
+- shape: { kind:"shape", shape:"rectangle"|"ellipse"|..., fill, stroke?, strokeWidth? }
+- image: { kind:"image", src, objectFit:"cover"|"contain"|"fill" }
+- icon: { kind:"icon", iconName, color }
+
+Patches: create_element { op, pageId, element }, update_element { op, pageId, elementId, patch }, delete_element, apply_theme, update_page, reorder_element
+
+Bounds: x>=0, y>=0, x+width<=page.width, y+height<=page.height. All coords multiples of 8. Min 64px margin from edges. Max 6 elements/page. zIndex from 1 upward.
+
+Example text: {"id":"el1","kind":"text","content":"Headline","x":64,"y":64,"width":952,"height":80,"rotation":0,"zIndex":1,"opacity":1,"fontFamily":"Inter","fontSize":48,"fontWeight":"700","fontStyle":"normal","color":"#F8FAFC","textAlign":"center","lineHeight":1.2}`
+
 /** Shorter snapshot for multi-phase agent calls (intent/plan/tokens) to save tokens. */
 export function buildSlimDocumentContextForAgent(document: DesignDocument | null, maxChars = 14_000): string {
   if (!document) return "No document yet."

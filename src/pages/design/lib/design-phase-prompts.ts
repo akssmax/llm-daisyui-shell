@@ -1,9 +1,47 @@
 import type { DesignDocument } from "../types"
-import { buildSlimDocumentContextForAgent } from "./design-prompt"
+import { buildDesignSystemPrompt, buildSlimDocumentContextForAgent, COMPOSE_SCHEMA_EXCERPT } from "./design-prompt"
 import type { DesignTokenBundle, IntentPlanPayload, LayoutTree } from "./design-agent-schemas"
 import { retrieveDesignPatterns } from "./design-pattern-retrieval"
 
 const JSON_ONLY = "Reply with ONLY one JSON object (no markdown fences, no prose). The API uses JSON mode."
+
+const SEMANTIC_BUNDLE_MAX_CHARS = 3_500
+
+const COMPOSE_RULES = `Canvas JSON rules (critical):
+- Output exactly ONE JSON object: either {"kind":"document","document":DesignDocument,"assistantNote":string} OR {"kind":"patches","patches":[PatchOp,...],"assistantNote":string} OR {"kind":"message","text":string}.
+- If CURRENT DOCUMENT is missing or has zero elements, you MUST return {"kind":"document",...} with a full DesignDocument including at least one text or shape on page 0. Do NOT return {"kind":"patches"} when there is no document to patch.
+- When a non-empty document already exists, prefer "patches" for edits; every create_element must use a pageId that exists in the current document JSON.
+- page.backgroundColor solid hex; elements fully inside page width/height; x,y,width,height multiples of 8; min margin 64px from edges.
+- Max 6 elements per page; zIndex starts at 1.
+- Every element MUST include: id, kind, x, y, width, height, rotation (0), zIndex, opacity (1).
+- text: kind:"text", content (NEVER empty), fontFamily, fontSize, fontWeight, fontStyle, color, textAlign, lineHeight.
+- assistantNote: concise summary, max ~800 chars.`
+
+/** Compact summary of prior agent phases — avoids unbounded JSON.stringify(bundle). */
+export function summarizeSemanticBundle(
+  intentPlan: IntentPlanPayload,
+  tokens: DesignTokenBundle,
+  layout: LayoutTree,
+  maxChars = SEMANTIC_BUNDLE_MAX_CHARS,
+): string {
+  const regions = layout.regions
+    .slice(0, 12)
+    .map((r) => `${r.id}:${r.role}@${r.relativeRect.x.toFixed(2)},${r.relativeRect.y.toFixed(2)}`)
+    .join("; ")
+  const lines = [
+    `Intent: ${intentPlan.intent.designType} | ${intentPlan.intent.tone} | ${intentPlan.intent.platform} | density:${intentPlan.intent.density}`,
+    `Audience: ${intentPlan.intent.audience}`,
+    `Content priority: ${intentPlan.intent.contentPriority.slice(0, 6).join(", ")}`,
+    `Layout: ${intentPlan.plan.layoutType} | hierarchy: ${intentPlan.plan.visualHierarchy.slice(0, 5).join(" > ")}`,
+    `Grid: ${intentPlan.plan.grid.columns} cols, safeMargin ${intentPlan.plan.grid.safeMargin}px`,
+    `Fonts: heading=${tokens.tokens.headingFont}, body=${tokens.tokens.bodyFont}`,
+    `Colors: ${JSON.stringify(tokens.tokens.colors)}`,
+    `Regions (${layout.regions.length}): ${regions || "none"}`,
+  ]
+  let out = lines.join("\n")
+  if (out.length > maxChars) out = `${out.slice(0, maxChars)}\n…[bundle truncated]`
+  return out
+}
 
 export function buildIntentPlanSystemPrompt(userMessage: string): string {
   const patterns = retrieveDesignPatterns(userMessage, 3200)
@@ -56,77 +94,150 @@ export function buildLayoutTreePhasePrompt(userMessage: string, ip: IntentPlanPa
   ].join("\n")
 }
 
-const COMPOSE_RULES = `Canvas JSON rules (critical):
-- Output exactly ONE JSON object: either {"kind":"document","document":DesignDocument,"assistantNote":string} OR {"kind":"patches","patches":[PatchOp,...],"assistantNote":string} OR {"kind":"message","text":string}.
-- If CURRENT DOCUMENT is missing or has zero elements, you MUST return {"kind":"document",...} with a full DesignDocument including at least one text or shape on page 0. Do NOT return {"kind":"patches"} when there is no document to patch — the client cannot apply patches without a base document.
-- When a non-empty document already exists, prefer "patches" for edits; every create_element must use a pageId that exists in the current document JSON.
-- page.backgroundColor solid hex; elements fully inside page width/height; x,y,width,height multiples of 8; min margin 64px from edges.
-- Max 6 elements per page; zIndex starts at 1.
-- Every element MUST include: id (unique string), kind, x, y, width, height, rotation (0), zIndex, opacity (1).
-- text element REQUIRED fields: kind:"text", content (the actual visible text string — NEVER omit or leave empty), fontFamily, fontSize, fontWeight, fontStyle ("normal"|"italic"), color (hex), textAlign ("left"|"center"|"right"), lineHeight.
-- shape element REQUIRED fields: kind:"shape", shape ("rectangle"|"ellipse"|"triangle"|"line"|"arrow"), fill (hex).
-- image element REQUIRED fields: kind:"image", src (URL string), objectFit ("cover"|"contain"|"fill").
-- icon element REQUIRED fields: kind:"icon", iconName (string), color (hex).
-- assistantNote: concise summary + follow-ups, max ~800 chars plain text.
-- EXAMPLE text element: {"id":"el1","kind":"text","content":"Your headline here","x":64,"y":64,"width":952,"height":80,"rotation":0,"zIndex":1,"opacity":1,"fontFamily":"Inter","fontSize":48,"fontWeight":"700","fontStyle":"normal","color":"#1A1A1A","textAlign":"center","lineHeight":1.2}`
+export type ComposePromptOptions = {
+  includeDocument?: boolean
+  documentMaxChars?: number
+}
 
-export function buildComposePhaseSystemPrompt(document: DesignDocument | null, bundle: {
-  intentPlan: IntentPlanPayload
-  tokens: DesignTokenBundle
-  layout: LayoutTree
-}): string {
-  const slim = buildSlimDocumentContextForAgent(document, 10_000)
+export function buildComposePhaseSystemPrompt(
+  document: DesignDocument | null,
+  bundle: {
+    intentPlan: IntentPlanPayload
+    tokens: DesignTokenBundle
+    layout: LayoutTree
+  },
+  opts?: ComposePromptOptions,
+): string {
+  const includeDoc = opts?.includeDocument !== false
+  const docMax = opts?.documentMaxChars ?? 10_000
+  const slim = includeDoc ? buildSlimDocumentContextForAgent(document, docMax) : "Omitted to save output tokens — use semantic bundle only."
+  const summary = summarizeSemanticBundle(bundle.intentPlan, bundle.tokens, bundle.layout)
+  const pageId = document?.pages[0]?.id
+
   return [
     JSON_ONLY,
     "You are stage 5: produce the final canvas as patches or a full document. Obey the semantic plan and tokens.",
+    COMPOSE_SCHEMA_EXCERPT,
     COMPOSE_RULES,
     "",
     document
-      ? "You are editing an existing document: prefer kind:\"patches\" unless a full redesign is clearly required."
+      ? `You are editing an existing document: prefer kind:"patches" unless a full redesign is clearly required. Use pageId: "${pageId ?? "see CURRENT DOCUMENT"}".`
       : "There is no document yet: you MUST emit kind:\"document\" with a complete DesignDocument (pages, theme, elements).",
     "",
-    "Semantic bundle:",
-    JSON.stringify(bundle),
+    "Semantic summary:",
+    summary,
     "",
     "CURRENT DOCUMENT (trimmed):",
     slim,
   ].join("\n")
 }
 
-/**
- * Minimal fallback compose prompt used only when the full compose step fails to produce
- * parseable JSON. Strips the document snapshot and most bundle details to reduce context size,
- * maximising the chance that a small model returns clean JSON on a second attempt.
- */
+/** Smaller compose prompt after truncation — drops document snapshot for new designs. */
+export function buildComposeTruncationRetryPrompt(
+  document: DesignDocument | null,
+  bundle: { intentPlan: IntentPlanPayload; tokens: DesignTokenBundle; layout: LayoutTree },
+): string {
+  return buildComposePhaseSystemPrompt(document, bundle, {
+    includeDocument: Boolean(document),
+    documentMaxChars: document ? 4_000 : 0,
+  })
+}
+
 export function buildComposeFallbackPrompt(
   document: DesignDocument | null,
   intentPlan: IntentPlanPayload,
   tokens: DesignTokenBundle,
+  layout?: LayoutTree,
 ): string {
   const colors = tokens.tokens.colors
   const intent = intentPlan.intent
-  const headingFont = tokens.tokens.headingFont
-  const bodyFont = tokens.tokens.bodyFont
+  const pageId = document?.pages[0]?.id ?? "page1"
+  const pw = document?.pages[0]?.width ?? 1080
+  const ph = document?.pages[0]?.height ?? 1080
+  const regionLines =
+    layout?.regions
+      .slice(0, 8)
+      .map((r) => `- ${r.id} (${r.role}): x=${r.relativeRect.x.toFixed(2)} y=${r.relativeRect.y.toFixed(2)} w=${r.relativeRect.w.toFixed(2)} h=${r.relativeRect.h.toFixed(2)}`)
+      .join("\n") ?? ""
+
   return [
     JSON_ONLY,
+    COMPOSE_SCHEMA_EXCERPT,
     document
-      ? 'Output ONLY {"kind":"patches","patches":[...],"assistantNote":"..."} with at most 6 create_element ops using the existing pageId from the document.'
-      : 'Output ONLY {"kind":"document","document":{id,title,type,createdAt,updatedAt,theme,pages},"assistantNote":"..."}.',
+      ? `Output ONLY {"kind":"patches","patches":[...],"assistantNote":"..."} with at most 6 create_element ops. REQUIRED pageId: "${pageId}".`
+      : `Output ONLY {"kind":"document","document":{...},"assistantNote":"..."}. Page template: id="${pageId}", width:${pw}, height:${ph}, backgroundColor:"${colors.background ?? "#FFFFFF"}", elements:[...].`,
     "",
-    "Canvas rules (non-negotiable):",
-    "- page width:1080, height:1080",
-    "- max 5 elements, zIndex starts at 1",
-    "- all x/y/width/height must be multiples of 8",
-    "- min 64px margin from every edge",
-    "- text elements need: content (the visible text string), fontFamily, fontSize, fontWeight, fontStyle (\"normal\"|\"italic\"), color (hex), textAlign (\"left\"|\"center\"|\"right\"), lineHeight",
-    "- shape elements need: shape (rectangle|ellipse), fill (hex)",
-    "- document type: social-post",
+    "Canvas rules:",
+    `- page ${pw}×${ph}, max 5 elements, zIndex from 1`,
+    "- x/y/width/height multiples of 8, min 64px margin",
+    "- text needs content, fontFamily, fontSize, fontWeight, fontStyle, color, textAlign, lineHeight",
     "",
-    `Design intent: ${intent.designType}, tone: ${intent.tone}, platform: ${intent.platform}`,
-    `Fonts — heading: ${headingFont}, body: ${bodyFont}`,
+    `Intent: ${intent.designType}, ${intent.tone}, ${intent.platform}`,
+    `Layout type: ${intentPlan.plan.layoutType}`,
+    `Hierarchy: ${intentPlan.plan.visualHierarchy.slice(0, 4).join(" > ")}`,
+    `Fonts: ${tokens.tokens.headingFont} / ${tokens.tokens.bodyFont}`,
     `Colors: ${JSON.stringify(colors)}`,
-    `User request: ${intentPlan.plan.layoutType}`,
+    regionLines ? `\nLayout regions (place content in these areas):\n${regionLines}` : "",
   ].join("\n")
+}
+
+/** Elements-only compose — ~70% smaller JSON than full DesignDocument. */
+export function buildComposeElementsOnlyPrompt(
+  bundle: { intentPlan: IntentPlanPayload; tokens: DesignTokenBundle; layout: LayoutTree },
+): string {
+  const summary = summarizeSemanticBundle(bundle.intentPlan, bundle.tokens, bundle.layout, 2_000)
+  return [
+    JSON_ONLY,
+    "You are stage 5 (compact mode): output ONLY this shape:",
+    '{ "kind": "elements", "elements": [ /* DesignElement objects */ ], "assistantNote": string }',
+    "Do NOT wrap in a full document. Provide 3–6 elements with all required fields.",
+    COMPOSE_SCHEMA_EXCERPT,
+    "",
+    "Semantic summary:",
+    summary,
+    "",
+    "Page is 1080×1080. Place elements inside bounds with 64px margin.",
+  ].join("\n")
+}
+
+/** Hybrid compose — LLM fills text per layout region; positions are computed client-side. */
+export function buildComposeHybridPrompt(
+  bundle: { intentPlan: IntentPlanPayload; tokens: DesignTokenBundle; layout: LayoutTree },
+): string {
+  const regionSpec = bundle.layout.regions
+    .map((r) => `{ "regionId": "${r.id}", "content": "<${r.role} text>" }`)
+    .join(",\n  ")
+  return [
+    JSON_ONLY,
+    "You are stage 5 (region mode): output ONLY:",
+    '{ "kind": "region_contents", "regionContents": [',
+    `  ${regionSpec}`,
+    "  ],",
+    '  "assistantNote": string }',
+    "",
+    "Write real copy for each regionId from the user request. One string per region.",
+    `Fonts: heading=${bundle.tokens.tokens.headingFont}, body=${bundle.tokens.tokens.bodyFont}`,
+    `Tone: ${bundle.intentPlan.intent.tone}`,
+    "",
+    summarizeSemanticBundle(bundle.intentPlan, bundle.tokens, bundle.layout, 2_000),
+  ].join("\n")
+}
+
+/** Last-resort: reuse proven one-shot prompt with agent context prefix. */
+export function buildEnrichedOneShotComposePrompt(
+  document: DesignDocument | null,
+  bundle: { intentPlan: IntentPlanPayload; tokens: DesignTokenBundle; layout: LayoutTree },
+  userMessage: string,
+): string {
+  const base = buildDesignSystemPrompt(document)
+  const prefix = [
+    "Prior agent phases completed. Use this semantic summary:",
+    summarizeSemanticBundle(bundle.intentPlan, bundle.tokens, bundle.layout),
+    "",
+    `User request: ${userMessage}`,
+    "",
+  ].join("\n")
+  return `${prefix}${base}`
 }
 
 export function buildRepairPatchesSystemPrompt(
