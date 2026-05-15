@@ -317,3 +317,24 @@ export function flattenTailwindSwatches(): Array<{ label: string; hex: string }>
   }
   return out
 }
+
+const HEX_TO_TAILWIND_LABEL: Map<string, string> = new Map(
+  flattenTailwindSwatches().map((s) => [s.hex.toUpperCase(), s.label]),
+)
+
+/** Resolve a hex value to a Tailwind token name (e.g. #DC2626 → red-600). */
+export function getTailwindTokenLabelForHex(hex: string): string | null {
+  const key = hex.trim().toUpperCase()
+  if (!key.startsWith("#")) return null
+  return HEX_TO_TAILWIND_LABEL.get(key) ?? null
+}
+
+/** Human-readable color label for UI: "red-600 #DC2626" or "#AABBCC" if not in palette. */
+export function formatColorDisplayLabel(hex: string): string {
+  const normalized = hex.trim()
+  if (!normalized) return "#000000"
+  const token = getTailwindTokenLabelForHex(normalized)
+  const upperHex = normalized.startsWith("#") ? normalized.toUpperCase() : `#${normalized.toUpperCase()}`
+  if (token) return `${token} ${upperHex}`
+  return upperHex
+}

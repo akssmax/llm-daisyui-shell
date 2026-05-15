@@ -3,6 +3,7 @@ import type { DesignDocument, DesignElement, Theme } from "../types"
 import type { DesignTokenBundle, IntentPlanPayload, LayoutRegion, LayoutTree } from "./design-agent-schemas"
 import { coerceElement, tryParseDesignCandidate } from "./design-json-parser"
 import { parseJsonObjectFromModel } from "./design-agent-schemas"
+import { normalizeIconName } from "./lucide-icon-registry"
 
 const PAGE_W = 1080
 const PAGE_H = 1080
@@ -83,8 +84,10 @@ export type RegionContent = {
   fontSize?: number
   fontWeight?: string
   textAlign?: "left" | "center" | "right"
-  kind?: "text" | "shape"
+  kind?: "text" | "shape" | "icon"
   fill?: string
+  iconName?: string
+  color?: string
 }
 
 /** Map layout regions (0–1 rects) to pixel boxes on the artboard. */
@@ -128,9 +131,33 @@ export function assembleDocumentFromRegionContents(
   for (const region of layout.regions) {
     const box = regionToPixelBox(region, pw, ph, margin)
     const rc = contentById.get(region.id)
+    const role = region.role.toLowerCase()
+    const isIconRegion = role === "icon" || rc?.kind === "icon"
+
+    if (isIconRegion) {
+      const rawName = rc?.iconName ?? rc?.content ?? ""
+      const iconName = normalizeIconName(rawName)
+      if (!iconName) continue
+      const iconSize = snap8(Math.min(box.width, box.height, 64))
+      const accent = tokens.tokens.colors.accent ?? tokens.tokens.colors.textPrimary ?? "#4F46E5"
+      elements.push({
+        id: `el${nanoid(6)}`,
+        kind: "icon",
+        iconName,
+        color: rc?.color ?? accent,
+        x: box.x + (box.width - iconSize) / 2,
+        y: box.y + (box.height - iconSize) / 2,
+        width: iconSize,
+        height: iconSize,
+        rotation: 0,
+        zIndex: z++,
+        opacity: 1,
+      })
+      continue
+    }
+
     if (!rc?.content?.trim()) continue
 
-    const role = region.role.toLowerCase()
     const isHeading =
       role.includes("head") || role.includes("title") || hierarchy[0]?.toLowerCase() === region.role.toLowerCase()
     const fontSize = rc.fontSize ?? (isHeading ? 48 : 24)

@@ -1,0 +1,105 @@
+{
+  "id": "timeline-horizontal",
+  "category": "timeline-slide",
+  "archetype": "timeline",
+  "styleTags": [
+    "timeline",
+    "horizontal",
+    "milestones"
+  ],
+  "density": "high",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.04,
+        "w": 1,
+        "h": 0.1
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "m1",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.2,
+        "w": 0.25,
+        "h": 0.25
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "m2",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.25,
+        "y": 0.2,
+        "w": 0.25,
+        "h": 0.25
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "m3",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.5,
+        "y": 0.2,
+        "w": 0.25,
+        "h": 0.25
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "m4",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.75,
+        "y": 0.2,
+        "w": 0.25,
+        "h": 0.25
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.55,
+        "w": 0.833,
+        "h": 0.2
+      },
+      "alignment": "left",
+      "importance": "tertiary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "timeline",
+    "tags": [
+      "timeline",
+      "horizontal",
+      "milestones"
+    ]
+  }
+}

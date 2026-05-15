@@ -1,7 +1,12 @@
 import { useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
-import { TAILWIND_BASE_SWATCHES, TAILWIND_COLOR_RAMPS, TAILWIND_SHADES } from "../../lib/tailwind-color-palette"
+import {
+  formatColorDisplayLabel,
+  TAILWIND_BASE_SWATCHES,
+  TAILWIND_COLOR_RAMPS,
+  TAILWIND_SHADES,
+} from "../../lib/tailwind-color-palette"
 
 interface Props {
   value: string
@@ -17,6 +22,7 @@ export function DesignColorPicker({ value, onChange, label }: Props) {
   const [open, setOpen] = useState(false)
   const safeValue = typeof value === "string" && value.trim().length > 0 ? value.trim() : "#000000"
   const safeValueLower = normalizeHex(safeValue)
+  const displayLabel = formatColorDisplayLabel(safeValue)
 
   const pick = (hex: string) => {
     onChange(hex)
@@ -35,7 +41,9 @@ export function DesignColorPicker({ value, onChange, label }: Props) {
             className="size-4 shrink-0 rounded-sm border border-black/10"
             style={{ backgroundColor: safeValue }}
           />
-          <span className="text-xs font-mono text-muted-foreground truncate">{safeValue}</span>
+          <span className="text-xs font-mono text-muted-foreground truncate" title={displayLabel}>
+            {displayLabel}
+          </span>
         </button>
       </PopoverTrigger>
       <PopoverContent

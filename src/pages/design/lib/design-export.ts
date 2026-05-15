@@ -1,6 +1,29 @@
 import type { DesignDocument, DesignElement, DesignPage } from "../types"
 import { fontFamilyForHtmlCss, googleFontStylesheetHrefsForExport } from "./design-fonts"
 import { normalizeFontWeightToCssString } from "./design-text-style"
+import { collectIconPathSpecs, getLucideIconNode } from "./lucide-icon-registry"
+
+const LUCIDE_VIEWBOX = 24
+
+function iconToSvgMarkup(el: Extract<DesignElement, { kind: "icon" }>): string {
+  const node = getLucideIconNode(el.iconName)
+  if (!node) {
+    return `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:${el.color};font-size:${Math.min(el.width, el.height)}px;">◆</div>`
+  }
+  const paths = collectIconPathSpecs(node)
+  const scale = Math.min(el.width, el.height) / LUCIDE_VIEWBOX
+  const pathEls = paths
+    .map((spec) => {
+      const usesFill = spec.fill && spec.fill !== "none"
+      const sw = spec.strokeWidth ?? 2
+      if (usesFill) {
+        return `<path d="${spec.d}" fill="${el.color}" transform="scale(${scale})"/>`
+      }
+      return `<path d="${spec.d}" fill="none" stroke="${el.color}" stroke-width="${sw * scale}" stroke-linecap="round" stroke-linejoin="round" transform="scale(${scale})"/>`
+    })
+    .join("")
+  return `<svg width="${el.width}" height="${el.height}" viewBox="0 0 ${el.width} ${el.height}" xmlns="http://www.w3.org/2000/svg">${pathEls}</svg>`
+}
 
 // ─── HTML Export ────────────────────────────────────────────────────────────
 
@@ -63,7 +86,11 @@ function elementToHtml(el: DesignElement): string {
   }
 
   // icon — just a placeholder box
-  return `<div style="${base}display:flex;align-items:center;justify-content:center;color:${el.color};font-size:${Math.min(el.width, el.height)}px;">◆</div>`
+  if (el.kind === "icon") {
+    return `<div style="${base}">${iconToSvgMarkup(el)}</div>`
+  }
+
+  return `<div style="${base}"></div>`
 }
 
 function pageToHtml(page: DesignPage): string {

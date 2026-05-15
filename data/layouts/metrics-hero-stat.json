@@ -1,0 +1,82 @@
+{
+  "id": "metrics-hero-stat",
+  "category": "metrics-slide",
+  "archetype": "hero-centered",
+  "styleTags": [
+    "metrics",
+    "kpi",
+    "hero-stat"
+  ],
+  "density": "low",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "stat",
+      "role": "stats",
+      "relativeRect": {
+        "x": 0.167,
+        "y": 0.28,
+        "w": 0.667,
+        "h": 0.28
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.08,
+        "w": 0.833,
+        "h": 0.14
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.167,
+        "y": 0.62,
+        "w": 0.667,
+        "h": 0.15
+      },
+      "alignment": "center",
+      "importance": "tertiary"
+    },
+    {
+      "id": "accent_icon",
+      "role": "icon",
+      "relativeRect": {
+        "x": 0.9166666666666666,
+        "y": 0.08333333333333333,
+        "w": 0.08333333333333333,
+        "h": 0.08333333333333333
+      },
+      "alignment": "center",
+      "importance": "tertiary",
+      "iconHint": "arrow-right"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "hero-centered",
+    "tags": [
+      "metrics",
+      "kpi",
+      "hero-stat"
+    ]
+  }
+}

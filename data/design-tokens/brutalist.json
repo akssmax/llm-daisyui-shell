@@ -1,0 +1,53 @@
+{
+  "id": "brutalist",
+  "name": "Brutalist",
+  "styleTags": [
+    "brutalist",
+    "bold",
+    "raw"
+  ],
+  "spacing": [
+    8,
+    16,
+    24,
+    32,
+    48,
+    64,
+    96
+  ],
+  "typography": {
+    "hero": 88,
+    "h1": 64,
+    "h2": 44,
+    "h3": 32,
+    "body": 22,
+    "caption": 16
+  },
+  "colors": {
+    "background": "#FFFF00",
+    "surface": "#000000",
+    "textPrimary": "#000000",
+    "textSecondary": "#1A1A1A",
+    "accent": "#FF00FF"
+  },
+  "radius": [
+    0,
+    0,
+    0
+  ],
+  "shadows": {
+    "sm": "4px 4px 0 #000",
+    "md": "8px 8px 0 #000",
+    "lg": "12px 12px 0 #000"
+  },
+  "rules": {
+    "lineHeight": {
+      "hero": 1,
+      "body": 1.4
+    },
+    "maxLineWidth": 800,
+    "contrastMin": 4.5
+  },
+  "headingFont": "Arial Black",
+  "bodyFont": "Arial"
+}

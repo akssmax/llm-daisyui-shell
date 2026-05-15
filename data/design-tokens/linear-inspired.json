@@ -1,0 +1,55 @@
+{
+  "id": "linear-inspired",
+  "name": "Linear-inspired",
+  "styleTags": [
+    "linear",
+    "dark",
+    "product",
+    "minimal"
+  ],
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48,
+    64
+  ],
+  "typography": {
+    "hero": 64,
+    "h1": 48,
+    "h2": 32,
+    "h3": 24,
+    "body": 16,
+    "caption": 13
+  },
+  "colors": {
+    "background": "#09090B",
+    "surface": "#18181B",
+    "textPrimary": "#FAFAFA",
+    "textSecondary": "#A1A1AA",
+    "accent": "#8B5CF6"
+  },
+  "radius": [
+    6,
+    8,
+    12
+  ],
+  "shadows": {
+    "sm": "0 0 0 1px rgba(255,255,255,0.06)",
+    "md": "0 8px 24px rgba(0,0,0,0.4)",
+    "lg": "0 16px 48px rgba(0,0,0,0.5)"
+  },
+  "rules": {
+    "lineHeight": {
+      "hero": 1.1,
+      "body": 1.5
+    },
+    "maxLineWidth": 640,
+    "contrastMin": 4.5
+  },
+  "headingFont": "Inter",
+  "bodyFont": "Inter"
+}

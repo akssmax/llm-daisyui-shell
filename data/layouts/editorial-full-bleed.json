@@ -1,0 +1,69 @@
+{
+  "id": "editorial-full-bleed",
+  "category": "editorial-poster",
+  "archetype": "full-bleed-image",
+  "styleTags": [
+    "editorial",
+    "photo",
+    "poster"
+  ],
+  "density": "low",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "image",
+      "role": "image",
+      "relativeRect": {
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 0.7
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.72,
+        "w": 0.833,
+        "h": 0.15
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.88,
+        "w": 0.667,
+        "h": 0.08
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "full-bleed-image",
+    "tags": [
+      "editorial",
+      "photo",
+      "poster"
+    ]
+  }
+}

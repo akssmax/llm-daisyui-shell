@@ -1,0 +1,69 @@
+{
+  "id": "editorial-swiss",
+  "category": "editorial-poster",
+  "archetype": "minimal-swiss",
+  "styleTags": [
+    "editorial",
+    "swiss",
+    "grid"
+  ],
+  "density": "low",
+  "hierarchy": "balanced",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.15,
+        "w": 0.5,
+        "h": 0.25
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.45,
+        "w": 0.417,
+        "h": 0.35
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "meta",
+      "role": "footer",
+      "relativeRect": {
+        "x": 0.667,
+        "y": 0.15,
+        "w": 0.333,
+        "h": 0.2
+      },
+      "alignment": "right",
+      "importance": "tertiary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "minimal-swiss",
+    "tags": [
+      "editorial",
+      "swiss",
+      "grid"
+    ]
+  }
+}

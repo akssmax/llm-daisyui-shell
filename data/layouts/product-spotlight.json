@@ -1,0 +1,94 @@
+{
+  "id": "product-spotlight",
+  "category": "product-showcase",
+  "archetype": "product-spotlight",
+  "styleTags": [
+    "product",
+    "showcase",
+    "ecommerce"
+  ],
+  "density": "low",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "product",
+      "role": "image",
+      "relativeRect": {
+        "x": 0.167,
+        "y": 0.1,
+        "w": 0.667,
+        "h": 0.45
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.58,
+        "w": 0.833,
+        "h": 0.12
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.167,
+        "y": 0.72,
+        "w": 0.667,
+        "h": 0.1
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "cta",
+      "role": "cta",
+      "relativeRect": {
+        "x": 0.333,
+        "y": 0.86,
+        "w": 0.333,
+        "h": 0.08
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "accent_icon",
+      "role": "icon",
+      "relativeRect": {
+        "x": 0.9166666666666666,
+        "y": 0.08333333333333333,
+        "w": 0.08333333333333333,
+        "h": 0.08333333333333333
+      },
+      "alignment": "center",
+      "importance": "tertiary",
+      "iconHint": "arrow-right"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "product-spotlight",
+    "tags": [
+      "product",
+      "showcase",
+      "ecommerce"
+    ]
+  }
+}

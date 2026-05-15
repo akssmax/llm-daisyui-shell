@@ -1,0 +1,81 @@
+{
+  "id": "product-grid",
+  "category": "product-showcase",
+  "archetype": "bento-grid",
+  "styleTags": [
+    "product",
+    "catalog",
+    "grid"
+  ],
+  "density": "high",
+  "hierarchy": "balanced",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.05,
+        "w": 1,
+        "h": 0.1
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "p1",
+      "role": "image",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.18,
+        "w": 0.5,
+        "h": 0.35
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "p2",
+      "role": "image",
+      "relativeRect": {
+        "x": 0.5,
+        "y": 0.18,
+        "w": 0.5,
+        "h": 0.35
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.58,
+        "w": 0.833,
+        "h": 0.15
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "bento-grid",
+    "tags": [
+      "product",
+      "catalog",
+      "grid"
+    ]
+  }
+}

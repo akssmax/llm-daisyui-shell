@@ -1,0 +1,69 @@
+{
+  "id": "editorial-two-col",
+  "category": "editorial-poster",
+  "archetype": "two-column-editorial",
+  "styleTags": [
+    "editorial",
+    "article",
+    "columns"
+  ],
+  "density": "medium",
+  "hierarchy": "balanced",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.06,
+        "w": 1,
+        "h": 0.15
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "col1",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.25,
+        "w": 0.417,
+        "h": 0.6
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "col2",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.583,
+        "y": 0.25,
+        "w": 0.417,
+        "h": 0.6
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "two-column-editorial",
+    "tags": [
+      "editorial",
+      "article",
+      "columns"
+    ]
+  }
+}

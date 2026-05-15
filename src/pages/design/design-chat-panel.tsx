@@ -30,6 +30,7 @@ import { Reasoning, ReasoningTrigger } from "@/components/ai-elements/reasoning"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { DesignAgentChainOfThought } from "./components/design-agent-chain-of-thought"
+import { updateDesignMemoryRating } from "./lib/layout-intelligence/design-memory-store"
 import type { DesignAgentPhaseTrace } from "./lib/design-agent-orchestrator"
 import {
   PromptInput,
@@ -173,6 +174,12 @@ export function DesignChatPanel() {
       setDesignAgentPipelineEnabled: s.setDesignAgentPipelineEnabled,
     })),
   )
+
+  const handleThumbRating = useCallback(async (rating: 1 | -1) => {
+    const { lastLayoutId, document } = useDesignStore.getState()
+    if (!lastLayoutId || !document) return
+    await updateDesignMemoryRating(lastLayoutId, rating, document.type)
+  }, [])
 
   useEffect(() => {
     if (skipInitialChatResetEffect.current) {
@@ -507,6 +514,7 @@ export function DesignChatPanel() {
                           variant="ghost"
                           size="icon-sm"
                           className="rounded-lg text-muted-foreground hover:bg-emerald-500/12 hover:text-emerald-600 dark:hover:text-emerald-400"
+                          onClick={() => void handleThumbRating(1)}
                         >
                           <ThumbsUp className="size-4" />
                         </MessageAction>
@@ -515,6 +523,7 @@ export function DesignChatPanel() {
                           variant="ghost"
                           size="icon-sm"
                           className="rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => void handleThumbRating(-1)}
                         >
                           <ThumbsDown className="size-4" />
                         </MessageAction>

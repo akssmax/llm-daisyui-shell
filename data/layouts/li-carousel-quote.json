@@ -1,0 +1,69 @@
+{
+  "id": "li-carousel-quote",
+  "category": "linkedin-carousel",
+  "archetype": "quote-emphasis",
+  "styleTags": [
+    "linkedin",
+    "quote",
+    "thought-leadership"
+  ],
+  "density": "low",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "quote",
+      "role": "quote",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.2,
+        "w": 0.833,
+        "h": 0.4
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "attribution",
+      "role": "subheading",
+      "relativeRect": {
+        "x": 0.167,
+        "y": 0.65,
+        "w": 0.667,
+        "h": 0.1
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "footer",
+      "role": "footer",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.85,
+        "w": 0.833,
+        "h": 0.06
+      },
+      "alignment": "center",
+      "importance": "tertiary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1350
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "quote-emphasis",
+    "tags": [
+      "linkedin",
+      "quote",
+      "thought-leadership"
+    ]
+  }
+}

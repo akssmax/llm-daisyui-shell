@@ -1,0 +1,94 @@
+{
+  "id": "feature-split",
+  "category": "feature-slide",
+  "archetype": "split",
+  "styleTags": [
+    "feature",
+    "product",
+    "saas"
+  ],
+  "density": "medium",
+  "hierarchy": "balanced",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.1,
+        "w": 0.5,
+        "h": 0.2
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.35,
+        "w": 0.417,
+        "h": 0.35
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "cta",
+      "role": "cta",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.75,
+        "w": 0.333,
+        "h": 0.1
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "visual",
+      "role": "image",
+      "relativeRect": {
+        "x": 0.5,
+        "y": 0.1,
+        "w": 0.5,
+        "h": 0.75
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "accent_icon",
+      "role": "icon",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.9166666666666666,
+        "w": 0.08333333333333333,
+        "h": 0.08333333333333333
+      },
+      "alignment": "center",
+      "importance": "tertiary",
+      "iconHint": "arrow-right"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "split",
+    "tags": [
+      "feature",
+      "product",
+      "saas"
+    ]
+  }
+}

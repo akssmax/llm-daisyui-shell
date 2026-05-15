@@ -1,0 +1,54 @@
+{
+  "id": "luxury-minimal",
+  "name": "Luxury Minimal",
+  "styleTags": [
+    "luxury",
+    "minimal",
+    "premium"
+  ],
+  "spacing": [
+    8,
+    16,
+    24,
+    40,
+    56,
+    72,
+    96
+  ],
+  "typography": {
+    "hero": 72,
+    "h1": 48,
+    "h2": 36,
+    "h3": 28,
+    "body": 18,
+    "caption": 14
+  },
+  "colors": {
+    "background": "#FDFBF7",
+    "surface": "#EDE8E0",
+    "textPrimary": "#1C1917",
+    "textSecondary": "#78716C",
+    "accent": "#B45309"
+  },
+  "radius": [
+    0,
+    2,
+    4,
+    8
+  ],
+  "shadows": {
+    "sm": "0 1px 3px rgba(28,25,23,0.06)",
+    "md": "0 4px 16px rgba(28,25,23,0.08)",
+    "lg": "0 8px 24px rgba(28,25,23,0.1)"
+  },
+  "rules": {
+    "lineHeight": {
+      "hero": 1.15,
+      "body": 1.6
+    },
+    "maxLineWidth": 560,
+    "contrastMin": 4.5
+  },
+  "headingFont": "Georgia",
+  "bodyFont": "Georgia"
+}

@@ -1,0 +1,70 @@
+{
+  "id": "quote-centered",
+  "category": "quote-card",
+  "archetype": "quote-emphasis",
+  "styleTags": [
+    "quote",
+    "inspirational",
+    "minimal"
+  ],
+  "density": "low",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "quote",
+      "role": "quote",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.22,
+        "w": 0.833,
+        "h": 0.45
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "attribution",
+      "role": "subheading",
+      "relativeRect": {
+        "x": 0.167,
+        "y": 0.72,
+        "w": 0.667,
+        "h": 0.1
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "accent_icon",
+      "role": "icon",
+      "relativeRect": {
+        "x": 0.9166666666666666,
+        "y": 0.08333333333333333,
+        "w": 0.08333333333333333,
+        "h": 0.08333333333333333
+      },
+      "alignment": "center",
+      "importance": "tertiary",
+      "iconHint": "quote"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "quote-emphasis",
+    "tags": [
+      "quote",
+      "inspirational",
+      "minimal"
+    ]
+  }
+}

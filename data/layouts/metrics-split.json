@@ -1,0 +1,69 @@
+{
+  "id": "metrics-split",
+  "category": "metrics-slide",
+  "archetype": "split",
+  "styleTags": [
+    "metrics",
+    "comparison",
+    "saas"
+  ],
+  "density": "medium",
+  "hierarchy": "balanced",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.06,
+        "w": 1,
+        "h": 0.12
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "left",
+      "role": "stats",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.22,
+        "w": 0.417,
+        "h": 0.55
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "right",
+      "role": "stats",
+      "relativeRect": {
+        "x": 0.583,
+        "y": 0.22,
+        "w": 0.417,
+        "h": 0.55
+      },
+      "alignment": "left",
+      "importance": "primary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "split",
+    "tags": [
+      "metrics",
+      "comparison",
+      "saas"
+    ]
+  }
+}

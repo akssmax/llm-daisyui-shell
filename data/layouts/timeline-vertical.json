@@ -1,0 +1,93 @@
+{
+  "id": "timeline-vertical",
+  "category": "timeline-slide",
+  "archetype": "timeline",
+  "styleTags": [
+    "timeline",
+    "roadmap",
+    "process"
+  ],
+  "density": "medium",
+  "hierarchy": "balanced",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.05,
+        "w": 1,
+        "h": 0.1
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "step1",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.18,
+        "w": 0.833,
+        "h": 0.15
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "step2",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.36,
+        "w": 0.833,
+        "h": 0.15
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "step3",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.54,
+        "w": 0.833,
+        "h": 0.15
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "step4",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.72,
+        "w": 0.833,
+        "h": 0.12
+      },
+      "alignment": "left",
+      "importance": "tertiary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "timeline",
+    "tags": [
+      "timeline",
+      "roadmap",
+      "process"
+    ]
+  }
+}

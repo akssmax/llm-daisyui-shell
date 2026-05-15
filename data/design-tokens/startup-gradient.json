@@ -1,0 +1,55 @@
+{
+  "id": "startup-gradient",
+  "name": "Startup Gradient",
+  "styleTags": [
+    "startup",
+    "gradient",
+    "playful"
+  ],
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48,
+    64
+  ],
+  "typography": {
+    "hero": 64,
+    "h1": 48,
+    "h2": 36,
+    "h3": 28,
+    "body": 20,
+    "caption": 16
+  },
+  "colors": {
+    "background": "#0F172A",
+    "surface": "#1E293B",
+    "textPrimary": "#F8FAFC",
+    "textSecondary": "#94A3B8",
+    "accent": "#22D3EE"
+  },
+  "radius": [
+    8,
+    12,
+    16,
+    24
+  ],
+  "shadows": {
+    "sm": "0 2px 8px rgba(34,211,238,0.15)",
+    "md": "0 8px 24px rgba(34,211,238,0.2)",
+    "lg": "0 16px 48px rgba(0,0,0,0.3)"
+  },
+  "rules": {
+    "lineHeight": {
+      "hero": 1.1,
+      "body": 1.5
+    },
+    "maxLineWidth": 680,
+    "contrastMin": 4.5
+  },
+  "headingFont": "Inter",
+  "bodyFont": "Inter"
+}

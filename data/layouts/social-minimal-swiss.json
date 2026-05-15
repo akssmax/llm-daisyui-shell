@@ -1,0 +1,75 @@
+{
+  "id": "social-minimal-swiss",
+  "category": "social-post",
+  "archetype": "minimal-swiss",
+  "styleTags": [
+    "social",
+    "swiss",
+    "minimal",
+    "editorial"
+  ],
+  "density": "low",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.12,
+        "w": 0.667,
+        "h": 0.3
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.5,
+        "w": 0.5,
+        "h": 0.25
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "accent",
+      "role": "shape",
+      "relativeRect": {
+        "x": 0.75,
+        "y": 0.12,
+        "w": 0.25,
+        "h": 0.15
+      },
+      "alignment": "right",
+      "importance": "tertiary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    },
+    {
+      "w": 1080,
+      "h": 1350
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "minimal-swiss",
+    "tags": [
+      "social",
+      "swiss",
+      "minimal",
+      "editorial"
+    ]
+  }
+}

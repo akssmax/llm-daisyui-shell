@@ -1,0 +1,82 @@
+{
+  "id": "pres-split-feature",
+  "category": "presentation-slide",
+  "archetype": "split",
+  "styleTags": [
+    "presentation",
+    "feature",
+    "enterprise"
+  ],
+  "density": "medium",
+  "hierarchy": "balanced",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.08,
+        "w": 0.5,
+        "h": 0.18
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.3,
+        "w": 0.417,
+        "h": 0.4
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "visual",
+      "role": "image",
+      "relativeRect": {
+        "x": 0.5,
+        "y": 0.08,
+        "w": 0.5,
+        "h": 0.7
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "accent_icon",
+      "role": "icon",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.9166666666666666,
+        "w": 0.08333333333333333,
+        "h": 0.08333333333333333
+      },
+      "alignment": "center",
+      "importance": "tertiary",
+      "iconHint": "arrow-right"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1920,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "split",
+    "tags": [
+      "presentation",
+      "feature",
+      "enterprise"
+    ]
+  }
+}

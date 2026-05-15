@@ -1,0 +1,108 @@
+{
+  "id": "li-carousel-metrics",
+  "category": "linkedin-carousel",
+  "archetype": "metrics-grid",
+  "styleTags": [
+    "linkedin",
+    "metrics",
+    "kpi",
+    "data"
+  ],
+  "density": "medium",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.06,
+        "w": 0.833,
+        "h": 0.14
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "kpi1",
+      "role": "stats",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.28,
+        "w": 0.333,
+        "h": 0.2
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "kpi2",
+      "role": "stats",
+      "relativeRect": {
+        "x": 0.333,
+        "y": 0.28,
+        "w": 0.333,
+        "h": 0.2
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "kpi3",
+      "role": "stats",
+      "relativeRect": {
+        "x": 0.667,
+        "y": 0.28,
+        "w": 0.333,
+        "h": 0.2
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.55,
+        "w": 0.833,
+        "h": 0.2
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "accent_icon",
+      "role": "icon",
+      "relativeRect": {
+        "x": 0.9166666666666666,
+        "y": 0.08333333333333333,
+        "w": 0.08333333333333333,
+        "h": 0.08333333333333333
+      },
+      "alignment": "center",
+      "importance": "tertiary",
+      "iconHint": "arrow-right"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1350
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "metrics-grid",
+    "tags": [
+      "linkedin",
+      "metrics",
+      "kpi",
+      "data"
+    ]
+  }
+}

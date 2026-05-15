@@ -127,6 +127,11 @@ type PageKey =
   // | "routines" // deferred — restore with RoutinesPage + sidebar item
   | "playground"
   | "design"
+
+type RecentSidebarItem =
+  | { kind: "chat"; thread: ChatThread }
+  | { kind: "design"; session: DesignSession }
+
 type IconType = React.ComponentType<{ className?: string }>
 
 const workspaceItems: Array<{ label: string; key: PageKey; icon: IconType }> = [
@@ -763,6 +768,24 @@ export function App() {
     [activeThreadId, threads]
   )
 
+  const recentItems = useMemo((): RecentSidebarItem[] => {
+    const items: RecentSidebarItem[] = [
+      ...threads.map((thread) => ({ kind: "chat" as const, thread })),
+      ...designSessions.map((session) => ({ kind: "design" as const, session })),
+    ]
+    return items.sort((a, b) => {
+      const aTime =
+        a.kind === "chat"
+          ? new Date(a.thread.updatedAt).getTime()
+          : new Date(a.session.updatedAt).getTime()
+      const bTime =
+        b.kind === "chat"
+          ? new Date(b.thread.updatedAt).getTime()
+          : new Date(b.session.updatedAt).getTime()
+      return bTime - aTime
+    })
+  }, [threads, designSessions])
+
   const createAndSelectThread = useCallback(() => {
     const newThread = createChatThread()
     setThreads((prev) => [newThread, ...prev])
@@ -942,107 +965,120 @@ export function App() {
             <SidebarGroupLabel>Recents</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {/* Chat threads */}
-                {threads.map((thread) => (
-                  <SidebarMenuItem key={thread.threadId} className="group/menu-item relative">
-                    <SidebarMenuButton
-                      isActive={activePage === "new-chat" && activeThreadId === thread.threadId}
-                      tooltip={thread.title}
-                      onClick={() => {
-                        if (renamingThreadId === thread.threadId) return
-                        selectThread(thread.threadId)
-                      }}
-                      className="pr-9"
+                {recentItems.map((item) =>
+                  item.kind === "chat" ? (
+                    <SidebarMenuItem
+                      key={`chat-${item.thread.threadId}`}
+                      className="group/menu-item relative"
                     >
-                      <MessageCircle />
-                      {renamingThreadId === thread.threadId ? (
-                        <Input
-                          autoFocus
-                          className="h-6 px-2 text-xs"
-                          value={renameDraft}
-                          onChange={(event) => setRenameDraft(event.target.value)}
-                          onBlur={() => commitRenameThread(thread.threadId)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault()
-                              commitRenameThread(thread.threadId)
-                            } else if (event.key === "Escape") {
-                              event.preventDefault()
-                              cancelRenameThread()
+                      <SidebarMenuButton
+                        isActive={
+                          activePage === "new-chat" && activeThreadId === item.thread.threadId
+                        }
+                        tooltip={item.thread.title}
+                        onClick={() => {
+                          if (renamingThreadId === item.thread.threadId) return
+                          selectThread(item.thread.threadId)
+                        }}
+                        className="pr-9"
+                      >
+                        <MessageCircle />
+                        {renamingThreadId === item.thread.threadId ? (
+                          <Input
+                            autoFocus
+                            className="h-6 px-2 text-xs"
+                            value={renameDraft}
+                            onChange={(event) => setRenameDraft(event.target.value)}
+                            onBlur={() => commitRenameThread(item.thread.threadId)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault()
+                                commitRenameThread(item.thread.threadId)
+                              } else if (event.key === "Escape") {
+                                event.preventDefault()
+                                cancelRenameThread()
+                              }
+                            }}
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                        ) : (
+                          <span>{item.thread.title}</span>
+                        )}
+                      </SidebarMenuButton>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="absolute top-1/2 right-1 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/menu-item:opacity-100 data-[state=open]:opacity-100"
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label="Chat actions"
+                          >
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem
+                            onSelect={() => startRenameThread(item.thread.threadId)}
+                          >
+                            <Pencil className="size-4" />
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onSelect={() => setThreadToDelete(item.thread)}
+                          >
+                            <Trash2 className="size-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </SidebarMenuItem>
+                  ) : (
+                    <SidebarMenuItem
+                      key={`design-${item.session.id}`}
+                      className="group/menu-item relative"
+                    >
+                      <SidebarMenuButton
+                        isActive={
+                          activePage === "design" && activeDesignSessionId === item.session.id
+                        }
+                        tooltip={item.session.title}
+                        onClick={() => selectDesignSession(item.session.id)}
+                        className="pr-9"
+                      >
+                        <PenLine />
+                        <span>{item.session.title}</span>
+                      </SidebarMenuButton>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="absolute top-1/2 right-1 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/menu-item:opacity-100 data-[state=open]:opacity-100"
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label="Design actions"
+                          >
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onSelect={() =>
+                              setDesignSessions((prev) =>
+                                prev.filter((s) => s.id !== item.session.id)
+                              )
                             }
-                          }}
-                          onClick={(event) => event.stopPropagation()}
-                        />
-                      ) : (
-                        <span>{thread.title}</span>
-                      )}
-                    </SidebarMenuButton>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="absolute top-1/2 right-1 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/menu-item:opacity-100 data-[state=open]:opacity-100"
-                          onClick={(event) => event.stopPropagation()}
-                          aria-label="Chat actions"
-                        >
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuItem onSelect={() => startRenameThread(thread.threadId)}>
-                          <Pencil className="size-4" />
-                          Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onSelect={() => setThreadToDelete(thread)}
-                        >
-                          <Trash2 className="size-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </SidebarMenuItem>
-                ))}
-                {/* Design sessions */}
-                {designSessions.map((session) => (
-                  <SidebarMenuItem key={session.id} className="group/menu-item relative">
-                    <SidebarMenuButton
-                      isActive={activePage === "design" && activeDesignSessionId === session.id}
-                      tooltip={session.title}
-                      onClick={() => selectDesignSession(session.id)}
-                      className="pr-9"
-                    >
-                      <PenLine />
-                      <span>{session.title}</span>
-                    </SidebarMenuButton>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="absolute top-1/2 right-1 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/menu-item:opacity-100 data-[state=open]:opacity-100"
-                          onClick={(event) => event.stopPropagation()}
-                          aria-label="Design actions"
-                        >
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onSelect={() =>
-                            setDesignSessions((prev) => prev.filter((s) => s.id !== session.id))
-                          }
-                        >
-                          <Trash2 className="size-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </SidebarMenuItem>
-                ))}
+                          >
+                            <Trash2 className="size-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </SidebarMenuItem>
+                  )
+                )}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

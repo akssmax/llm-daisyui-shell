@@ -5,12 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:vercel": "VITE_VERCEL_DEV=1 vite",
     "dev:api": "node dev-api-server.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:design-intelligence": "vitest run src/pages/design/lib/layout-intelligence",
+    "validate:layouts": "npx tsx scripts/validate-layout-catalog.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -38,6 +41,7 @@
     "jsonrepair": "^3.14.0",
     "jspdf": "^4.2.1",
     "konva": "^10.3.0",
+    "lucide": "^0.511.0",
     "lucide-react": "^1.14.0",
     "media-chrome": "^4.19.0",
     "motion": "^12.38.0",

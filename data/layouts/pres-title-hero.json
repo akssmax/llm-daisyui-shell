@@ -1,0 +1,82 @@
+{
+  "id": "pres-title-hero",
+  "category": "presentation-slide",
+  "archetype": "hero-centered",
+  "styleTags": [
+    "presentation",
+    "pitch",
+    "title"
+  ],
+  "density": "low",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0.167,
+        "y": 0.25,
+        "w": 0.667,
+        "h": 0.2
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "subheading",
+      "role": "subheading",
+      "relativeRect": {
+        "x": 0.25,
+        "y": 0.48,
+        "w": 0.5,
+        "h": 0.12
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "footer",
+      "role": "footer",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.88,
+        "w": 0.833,
+        "h": 0.06
+      },
+      "alignment": "center",
+      "importance": "tertiary"
+    },
+    {
+      "id": "accent_icon",
+      "role": "icon",
+      "relativeRect": {
+        "x": 0.9166666666666666,
+        "y": 0.08333333333333333,
+        "w": 0.08333333333333333,
+        "h": 0.08333333333333333
+      },
+      "alignment": "center",
+      "importance": "tertiary",
+      "iconHint": "arrow-right"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1920,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "hero-centered",
+    "tags": [
+      "presentation",
+      "pitch",
+      "title"
+    ]
+  }
+}

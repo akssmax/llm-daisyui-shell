@@ -23,11 +23,13 @@ MISTRAL_API_KEY=...
 - Frontend only (no API): `npm run dev` (Vite on port **3001**)
 - Full stack with `/api/chat` and **`/api/design-chat`** (same handler as chat):
 
-**Option A — Vercel dev** (runs Vite + serverless `api/*`):
+**Option A — Vercel dev** (runs Vite + serverless `api/*`; `dev:vercel` disables the `/api` proxy so routes are not sent to port 3002):
 
 ```bash
 vercel dev
 ```
+
+Open the URL Vercel prints (usually **http://localhost:3000**), not Vite’s **3001** directly.
 
 **Option B — Vite + local Node API** (what `vite.config.ts` proxies to on port **3002**):
 

@@ -1,0 +1,88 @@
+{
+  "id": "social-hero-bold",
+  "category": "social-post",
+  "archetype": "bold-typography-poster",
+  "styleTags": [
+    "social",
+    "instagram",
+    "bold",
+    "viral"
+  ],
+  "density": "low",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.15,
+        "w": 1,
+        "h": 0.35
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "subheading",
+      "role": "subheading",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.55,
+        "w": 0.833,
+        "h": 0.12
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "cta",
+      "role": "cta",
+      "relativeRect": {
+        "x": 0.25,
+        "y": 0.78,
+        "w": 0.5,
+        "h": 0.1
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "accent_icon",
+      "role": "icon",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.9166666666666666,
+        "w": 0.08333333333333333,
+        "h": 0.08333333333333333
+      },
+      "alignment": "center",
+      "importance": "tertiary",
+      "iconHint": "arrow-right"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    },
+    {
+      "w": 1080,
+      "h": 1350
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "bold-typography-poster",
+    "tags": [
+      "social",
+      "instagram",
+      "bold",
+      "viral"
+    ]
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "id": "pres-metrics-grid",
+  "category": "presentation-slide",
+  "archetype": "metrics-grid",
+  "styleTags": [
+    "presentation",
+    "metrics",
+    "dashboard"
+  ],
+  "density": "high",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.05,
+        "w": 1,
+        "h": 0.12
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "kpi1",
+      "role": "stats",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.22,
+        "w": 0.25,
+        "h": 0.25
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "kpi2",
+      "role": "stats",
+      "relativeRect": {
+        "x": 0.25,
+        "y": 0.22,
+        "w": 0.25,
+        "h": 0.25
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "kpi3",
+      "role": "stats",
+      "relativeRect": {
+        "x": 0.5,
+        "y": 0.22,
+        "w": 0.25,
+        "h": 0.25
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "kpi4",
+      "role": "stats",
+      "relativeRect": {
+        "x": 0.75,
+        "y": 0.22,
+        "w": 0.25,
+        "h": 0.25
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.55,
+        "w": 0.667,
+        "h": 0.2
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1920,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "metrics-grid",
+    "tags": [
+      "presentation",
+      "metrics",
+      "dashboard"
+    ]
+  }
+}

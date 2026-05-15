@@ -1,0 +1,99 @@
+{
+  "id": "social-bento",
+  "category": "social-post",
+  "archetype": "bento-grid",
+  "styleTags": [
+    "social",
+    "bento",
+    "modern",
+    "startup"
+  ],
+  "density": "high",
+  "hierarchy": "balanced",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.05,
+        "w": 0.583,
+        "h": 0.2
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "card1",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.3,
+        "w": 0.333,
+        "h": 0.28
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "card2",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.333,
+        "y": 0.3,
+        "w": 0.333,
+        "h": 0.28
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "card3",
+      "role": "stats",
+      "relativeRect": {
+        "x": 0.667,
+        "y": 0.3,
+        "w": 0.333,
+        "h": 0.28
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "cta",
+      "role": "cta",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.65,
+        "w": 1,
+        "h": 0.12
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    },
+    {
+      "w": 1080,
+      "h": 1350
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "bento-grid",
+    "tags": [
+      "social",
+      "bento",
+      "modern",
+      "startup"
+    ]
+  }
+}

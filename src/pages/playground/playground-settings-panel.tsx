@@ -324,7 +324,7 @@ export function PlaygroundSettingsPanel({
                 }
               />
             </Row>
-            <Row label="Assistant bubble" indent>
+            <Row label="LLM Response block" indent>
               <ColorSwatch
                 value={config.colors.assistantBubble}
                 onChange={(assistantBubble) =>

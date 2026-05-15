@@ -1,0 +1,69 @@
+{
+  "id": "product-layered",
+  "category": "product-showcase",
+  "archetype": "layered-card",
+  "styleTags": [
+    "product",
+    "card",
+    "premium"
+  ],
+  "density": "medium",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "card",
+      "role": "image",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.12,
+        "w": 0.833,
+        "h": 0.55
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0.167,
+        "y": 0.7,
+        "w": 0.667,
+        "h": 0.12
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "cta",
+      "role": "cta",
+      "relativeRect": {
+        "x": 0.333,
+        "y": 0.86,
+        "w": 0.333,
+        "h": 0.08
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "layered-card",
+    "tags": [
+      "product",
+      "card",
+      "premium"
+    ]
+  }
+}

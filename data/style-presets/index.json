@@ -1,0 +1,123 @@
+[
+  {
+    "id": "modern-saas-style",
+    "name": "Modern SaaS",
+    "styleTags": [
+      "saas",
+      "startup"
+    ],
+    "tokenPresetId": "modern-saas",
+    "preferredArchetypes": [
+      "hero-centered",
+      "split",
+      "metrics-grid"
+    ],
+    "layoutDensity": "medium",
+    "hierarchy": "strong"
+  },
+  {
+    "id": "swiss-style",
+    "name": "Swiss Editorial",
+    "styleTags": [
+      "swiss",
+      "editorial"
+    ],
+    "tokenPresetId": "swiss-editorial",
+    "preferredArchetypes": [
+      "minimal-swiss",
+      "editorial-asymmetric",
+      "two-column-editorial"
+    ],
+    "layoutDensity": "low",
+    "hierarchy": "balanced"
+  },
+  {
+    "id": "brutalist-style",
+    "name": "Brutalist",
+    "styleTags": [
+      "brutalist"
+    ],
+    "tokenPresetId": "brutalist",
+    "preferredArchetypes": [
+      "bold-typography-poster",
+      "hero-centered"
+    ],
+    "layoutDensity": "low",
+    "hierarchy": "strong"
+  },
+  {
+    "id": "luxury-style",
+    "name": "Luxury Minimal",
+    "styleTags": [
+      "luxury"
+    ],
+    "tokenPresetId": "luxury-minimal",
+    "preferredArchetypes": [
+      "minimal-swiss",
+      "product-spotlight"
+    ],
+    "layoutDensity": "low",
+    "hierarchy": "strong"
+  },
+  {
+    "id": "startup-style",
+    "name": "Startup Gradient",
+    "styleTags": [
+      "startup",
+      "gradient"
+    ],
+    "tokenPresetId": "startup-gradient",
+    "preferredArchetypes": [
+      "hero-centered",
+      "bento-grid"
+    ],
+    "layoutDensity": "medium",
+    "hierarchy": "strong"
+  },
+  {
+    "id": "enterprise-style",
+    "name": "Enterprise Clean",
+    "styleTags": [
+      "enterprise"
+    ],
+    "tokenPresetId": "enterprise-clean",
+    "preferredArchetypes": [
+      "split",
+      "metrics-grid",
+      "checklist"
+    ],
+    "layoutDensity": "medium",
+    "hierarchy": "balanced"
+  },
+  {
+    "id": "social-style",
+    "name": "Playful Social",
+    "styleTags": [
+      "social",
+      "playful"
+    ],
+    "tokenPresetId": "playful-social",
+    "preferredArchetypes": [
+      "bold-typography-poster",
+      "bento-grid"
+    ],
+    "layoutDensity": "medium",
+    "hierarchy": "strong"
+  },
+  {
+    "id": "linear-style",
+    "name": "Linear-inspired",
+    "styleTags": [
+      "linear",
+      "product"
+    ],
+    "tokenPresetId": "linear-inspired",
+    "preferredArchetypes": [
+      "split",
+      "feature",
+      "minimal-swiss"
+    ],
+    "layoutDensity": "low",
+    "hierarchy": "strong"
+  }
+]

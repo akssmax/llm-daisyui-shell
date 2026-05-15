@@ -1,0 +1,106 @@
+{
+  "id": "feature-checklist",
+  "category": "feature-slide",
+  "archetype": "checklist",
+  "styleTags": [
+    "feature",
+    "benefits",
+    "list"
+  ],
+  "density": "medium",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.08,
+        "w": 1,
+        "h": 0.14
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "b1",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.28,
+        "w": 0.833,
+        "h": 0.1
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "b2",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.4,
+        "w": 0.833,
+        "h": 0.1
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "b3",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.52,
+        "w": 0.833,
+        "h": 0.1
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "visual",
+      "role": "image",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.65,
+        "w": 0.5,
+        "h": 0.25
+      },
+      "alignment": "left",
+      "importance": "tertiary"
+    },
+    {
+      "id": "accent_icon",
+      "role": "icon",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.9166666666666666,
+        "w": 0.08333333333333333,
+        "h": 0.08333333333333333
+      },
+      "alignment": "center",
+      "importance": "tertiary",
+      "iconHint": "check-circle"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "checklist",
+    "tags": [
+      "feature",
+      "benefits",
+      "list"
+    ]
+  }
+}

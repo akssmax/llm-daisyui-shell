@@ -1,0 +1,69 @@
+{
+  "id": "editorial-asymmetric",
+  "category": "editorial-poster",
+  "archetype": "editorial-asymmetric",
+  "styleTags": [
+    "editorial",
+    "poster",
+    "magazine"
+  ],
+  "density": "low",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.08,
+        "w": 0.583,
+        "h": 0.35
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.5,
+        "w": 0.417,
+        "h": 0.3
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "visual",
+      "role": "image",
+      "relativeRect": {
+        "x": 0.583,
+        "y": 0.08,
+        "w": 0.417,
+        "h": 0.85
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "editorial-asymmetric",
+    "tags": [
+      "editorial",
+      "poster",
+      "magazine"
+    ]
+  }
+}

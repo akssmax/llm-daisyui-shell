@@ -1,0 +1,81 @@
+{
+  "id": "product-split",
+  "category": "product-showcase",
+  "archetype": "split",
+  "styleTags": [
+    "product",
+    "launch",
+    "hardware"
+  ],
+  "density": "medium",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.12,
+        "w": 0.5,
+        "h": 0.18
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.35,
+        "w": 0.417,
+        "h": 0.3
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "cta",
+      "role": "cta",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.7,
+        "w": 0.333,
+        "h": 0.1
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "product",
+      "role": "image",
+      "relativeRect": {
+        "x": 0.5,
+        "y": 0.08,
+        "w": 0.5,
+        "h": 0.82
+      },
+      "alignment": "center",
+      "importance": "primary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "split",
+    "tags": [
+      "product",
+      "launch",
+      "hardware"
+    ]
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "id": "swiss-editorial",
+  "name": "Swiss Editorial",
+  "styleTags": [
+    "swiss",
+    "editorial",
+    "minimal",
+    "grid"
+  ],
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48,
+    64,
+    96
+  ],
+  "typography": {
+    "hero": 80,
+    "h1": 56,
+    "h2": 36,
+    "h3": 28,
+    "body": 18,
+    "caption": 14
+  },
+  "colors": {
+    "background": "#FAFAFA",
+    "surface": "#E5E5E5",
+    "textPrimary": "#171717",
+    "textSecondary": "#525252",
+    "accent": "#DC2626"
+  },
+  "radius": [
+    0,
+    0,
+    2,
+    4
+  ],
+  "shadows": {
+    "sm": "none",
+    "md": "none",
+    "lg": "0 2px 8px rgba(0,0,0,0.06)"
+  },
+  "rules": {
+    "lineHeight": {
+      "hero": 1.05,
+      "body": 1.55,
+      "caption": 1.4
+    },
+    "maxLineWidth": 640,
+    "contrastMin": 7
+  },
+  "headingFont": "Helvetica Neue",
+  "bodyFont": "Helvetica Neue"
+}

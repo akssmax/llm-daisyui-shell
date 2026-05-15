@@ -2,6 +2,9 @@ import type { DesignDocument } from "../types"
 import { buildDesignSystemPrompt, buildSlimDocumentContextForAgent, COMPOSE_SCHEMA_EXCERPT } from "./design-prompt"
 import type { DesignTokenBundle, IntentPlanPayload, LayoutTree } from "./design-agent-schemas"
 import { retrieveDesignPatterns } from "./design-pattern-retrieval"
+import type { LayoutPattern } from "./layout-intelligence/types"
+import { lucideAllowlistForPrompt } from "./lucide-icon-registry"
+import { tailwindThemePromptList } from "./layout-intelligence/tailwind-theme-builder"
 
 const JSON_ONLY = "Reply with ONLY one JSON object (no markdown fences, no prose). The API uses JSON mode."
 
@@ -11,6 +14,7 @@ const COMPOSE_RULES = `Canvas JSON rules (critical):
 - Output exactly ONE JSON object: either {"kind":"document","document":DesignDocument,"assistantNote":string} OR {"kind":"patches","patches":[PatchOp,...],"assistantNote":string} OR {"kind":"message","text":string}.
 - If CURRENT DOCUMENT is missing or has zero elements, you MUST return {"kind":"document",...} with a full DesignDocument including at least one text or shape on page 0. Do NOT return {"kind":"patches"} when there is no document to patch.
 - When a non-empty document already exists, prefer "patches" for edits; every create_element must use a pageId that exists in the current document JSON.
+- Each slide/card = one page. Never put slide 2+ content on pages[0]. To add slides use { op:"create_page", page:{ id, width, height, backgroundColor, elements:[...] } } with a NEW page id per slide.
 - page.backgroundColor solid hex; elements fully inside page width/height; x,y,width,height multiples of 8; min margin 64px from edges.
 - Max 6 elements per page; zIndex starts at 1.
 - Every element MUST include: id, kind, x, y, width, height, rotation (0), zIndex, opacity (1).
@@ -51,7 +55,9 @@ export function buildIntentPlanSystemPrompt(userMessage: string): string {
     "",
     "Return exactly this shape:",
     `{ "intent": { "designType": string, "tone": string, "platform": string, "density": "minimal"|"normal"|"dense", "contentPriority": string[], "audience": string },`,
-    `  "plan": { "layoutType": string, "visualHierarchy": string[], "grid": { "columns": number, "safeMargin": number }, "spacingStrategy": { "baseUnit": number, "sectionGap": number } } }`,
+    `  "plan": { "layoutType": string, "visualHierarchy": string[], "grid": { "columns": number, "safeMargin": number }, "spacingStrategy": { "baseUnit": number, "sectionGap": number }, "slideCount": number } }`,
+    "",
+    "For carousels, decks, or multi-slide requests: set plan.slideCount to the number of slides (e.g. 5 for a 5-slide LinkedIn carousel). Single-image posts use slideCount: 1.",
     "",
     "Internal design knowledge (follow unless user conflicts):",
     patterns,
@@ -60,18 +66,139 @@ export function buildIntentPlanSystemPrompt(userMessage: string): string {
 
 export function buildDesignSystemPhasePrompt(userMessage: string, ip: IntentPlanPayload): string {
   const patterns = retrieveDesignPatterns(`${userMessage} ${ip.plan.layoutType}`, 2400)
+  const hues = tailwindThemePromptList()
   return [
-    "You are stage 3: design tokens only. Do NOT output canvas elements.",
+    "You are stage 3: pick a Tailwind-based color theme. Do NOT output canvas elements or arbitrary hex colors.",
     JSON_ONLY,
     "",
-    "Return:",
-    `{ "designSystem": { "tokens": { "colors": { "background": "#...", "surface": "#...", "textPrimary": "#...", "accent": "#..." }, "radius": number, "spacingScale": number[], "fontScale": number[], "headingFont": string, "bodyFont": string } } }`,
+    "Return exactly:",
+    `{ "accentHue": "<one of allowlist>", "mode": "light" | "dark" }`,
+    "",
+    `accentHue MUST be one of: ${hues}`,
+    "Choose accentHue from user intent (e.g. eco→emerald, finance→blue, health→teal, energy→orange). Default accentHue: indigo, mode: light.",
+    "Use mode dark only when the user clearly wants a dark theme.",
+    "Never use neon yellow or harsh brutalist colors unless the user explicitly said brutalist.",
     "",
     "Intent + plan:",
     JSON.stringify(ip),
     "",
+    "User message:",
+    userMessage,
+    "",
     "Knowledge:",
     patterns,
+  ].join("\n")
+}
+
+export function buildLayoutSelectPhasePrompt(
+  userMessage: string,
+  ip: IntentPlanPayload,
+  candidates: LayoutPattern[],
+): string {
+  const catalog = candidates.map((l) => ({
+    id: l.id,
+    category: l.category,
+    archetype: l.archetype,
+    styleTags: l.styleTags,
+    density: l.density,
+    hierarchy: l.hierarchy,
+    regions: l.regions.map((r) => ({ id: r.id, role: r.role, importance: r.importance })),
+  }))
+  return [
+    "You are stage 2: pick ONE layout from the catalog. Do NOT invent geometry or relativeRect.",
+    JSON_ONLY,
+    "",
+    'Return: { "layoutId": string, "reason": string }',
+    "layoutId MUST be one of the candidate ids below.",
+    "",
+    "Intent + plan:",
+    JSON.stringify(ip),
+    "",
+    "Layout candidates:",
+    JSON.stringify(catalog, null, 0),
+    "",
+    "User message:",
+    userMessage,
+  ].join("\n")
+}
+
+export function buildContentMapPhasePrompt(
+  userMessage: string,
+  ip: IntentPlanPayload,
+  layout: LayoutTree,
+  tokens: DesignTokenBundle,
+  slideCount = 1,
+): string {
+  const iconList = lucideAllowlistForPrompt()
+  const regionSpec = layout.regions
+    .map((r) => {
+      if (r.role === "icon") {
+        return `{ "regionId": "${r.id}", "kind": "icon", "iconName": "<kebab-case from allowlist>" }`
+      }
+      return `{ "regionId": "${r.id}", "content": "<copy for ${r.role}>" }`
+    })
+    .join(",\n    ")
+  const iconRules = [
+    "For regions with role icon: use kind icon and iconName from allowlist (not free text).",
+    `Icon allowlist: ${iconList}`,
+    "Match semantics: CTA→arrow-right, trust→shield, success→check-circle, growth→trending-up.",
+  ].join("\n")
+
+  if (slideCount > 1) {
+    return [
+      `You are stage 4: write copy for a ${slideCount}-slide ${ip.intent.designType}.`,
+      "CRITICAL: Each slide is a SEPARATE page. Put ONLY that slide's content in its regionContents — do NOT put all slides on one page.",
+      JSON_ONLY,
+      "",
+      `Return: { "slideCount": ${slideCount}, "slides": [`,
+      `  { "slideIndex": 0, "regionContents": [ ${regionSpec} ] },`,
+      `  { "slideIndex": 1, "regionContents": [ ... ] },`,
+      "  ... one entry per slide through slideIndex " + String(slideCount - 1),
+      "  ],",
+      '  "assistantNote": string }',
+      "",
+      "One clear message per slide. Slide 0 = hook, middle = value/proof, last = CTA/summary.",
+      iconRules,
+      `Tone: ${ip.intent.tone} · Platform: ${ip.intent.platform}`,
+      `Fonts: ${tokens.tokens.headingFont} / ${tokens.tokens.bodyFont}`,
+      "",
+      "User message:",
+      userMessage,
+    ].join("\n")
+  }
+
+  return [
+    "You are stage 4: write copy for each layout region. Do NOT output x/y/width/height or a full document.",
+    JSON_ONLY,
+    "",
+    'Return: { "regionContents": [',
+    `  ${regionSpec}`,
+    "  ],",
+    '  "assistantNote": string }',
+    "",
+    iconRules,
+    `Tone: ${ip.intent.tone} · Platform: ${ip.intent.platform}`,
+    `Fonts: ${tokens.tokens.headingFont} / ${tokens.tokens.bodyFont}`,
+    "",
+    "User message:",
+    userMessage,
+  ].join("\n")
+}
+
+/** Stricter retry when multi-slide content_map did not return slides[]. */
+export function buildContentMapRetryPrompt(
+  userMessage: string,
+  ip: IntentPlanPayload,
+  layout: LayoutTree,
+  tokens: DesignTokenBundle,
+  slideCount: number,
+): string {
+  return [
+    buildContentMapPhasePrompt(userMessage, ip, layout, tokens, slideCount),
+    "",
+    "RETRY — your previous response was invalid.",
+    `You MUST return { "slideCount": ${slideCount}, "slides": [ ... ] } with exactly ${slideCount} slide objects.`,
+    "Do NOT return flat regionContents. Each slides[i].regionContents is ONLY for that slideIndex.",
   ].join("\n")
 }
 
@@ -112,16 +239,28 @@ export function buildComposePhaseSystemPrompt(
   const docMax = opts?.documentMaxChars ?? 10_000
   const slim = includeDoc ? buildSlimDocumentContextForAgent(document, docMax) : "Omitted to save output tokens — use semantic bundle only."
   const summary = summarizeSemanticBundle(bundle.intentPlan, bundle.tokens, bundle.layout)
+  const pageIds = document?.pages.map((p, i) => `pages[${i}].id="${p.id}"`) ?? []
   const pageId = document?.pages[0]?.id
+  const multiSlideRules = document && document.pages.length > 0
+    ? [
+        "MULTI-SLIDE RULES (critical):",
+        `- Existing page ids: ${pageIds.join(", ") || "none"}.`,
+        "- Each slide/card = one page. Never put slide 2+ content on pages[0].",
+        '- To add slides: emit { op: "create_page", page: { id, width, height, backgroundColor, elements: [...] } } once per new slide.',
+        "- New pages need NEW unique ids (e.g. pg_new_1). Max 6 elements per page.",
+        "- Do NOT stack multiple slides worth of elements on a single page.",
+      ].join("\n")
+    : ""
 
   return [
     JSON_ONLY,
     "You are stage 5: produce the final canvas as patches or a full document. Obey the semantic plan and tokens.",
     COMPOSE_SCHEMA_EXCERPT,
     COMPOSE_RULES,
+    multiSlideRules,
     "",
     document
-      ? `You are editing an existing document: prefer kind:"patches" unless a full redesign is clearly required. Use pageId: "${pageId ?? "see CURRENT DOCUMENT"}".`
+      ? `You are editing an existing document (${document.pages.length} page(s)): prefer kind:"patches" unless a full redesign is clearly required. Use pageId from the list above — never reuse pages[0] for new slides.`
       : "There is no document yet: you MUST emit kind:\"document\" with a complete DesignDocument (pages, theme, elements).",
     "",
     "Semantic summary:",

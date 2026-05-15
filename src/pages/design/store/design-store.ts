@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware"
 import { nanoid } from "nanoid"
 import type { MistralModel } from "@/lib/llm-types"
 import type { DesignDocument, PatchOp, Theme, ShapeKind } from "../types"
+import type { DesignVariant } from "../lib/layout-intelligence/types"
 import { safePageElements } from "../lib/safe-page-elements"
 import { applyPatch } from "./patch-reducer"
 
@@ -46,8 +47,21 @@ type DesignState = {
   shapeToolVariant: ShapeKind
   /** Incremented after design fonts load so Konva text redraws with new `document.fonts`. */
   fontEpoch: number
-  /** Multi-phase design agent (intent → tokens → layout → compose → validate/repair). Default off. */
+  /** Multi-phase design agent (intent → tokens → layout → compose → validate/repair). */
   designAgentPipelineEnabled: boolean
+  /** Style preset id from catalog (e.g. modern-saas-style). */
+  stylePresetId: string | null
+  /** Override layout ids for next variant generation. */
+  pendingVariantLayoutIds: string[] | null
+  /** Last generation variants for carousel picker. */
+  designVariants: DesignVariant[] | null
+  activeVariantIndex: number
+  lastLayoutId: string | null
+  lastCritiqueScore: number | null
+  densityOverride: "low" | "medium" | "high" | null
+  hierarchyOverride: "strong" | "balanced" | null
+  /** Partial regeneration mode for next agent turn. */
+  regenerationMode: "full" | "layout" | "style" | "typography" | null
 
   setDocument: (doc: DesignDocument) => void
   resetDesignChatThread: () => void
@@ -72,6 +86,14 @@ type DesignState = {
   setPendingDesignImage: (dataUrl: string | null) => void
   setDesignChatModel: (model: MistralModel) => void
   setDesignAgentPipelineEnabled: (enabled: boolean) => void
+  setStylePresetId: (id: string | null) => void
+  setPendingVariantLayoutIds: (ids: string[] | null) => void
+  setDesignVariants: (variants: DesignVariant[] | null) => void
+  setActiveVariantIndex: (index: number) => void
+  setDensityOverride: (d: "low" | "medium" | "high" | null) => void
+  setHierarchyOverride: (h: "strong" | "balanced" | null) => void
+  setRegenerationMode: (mode: "full" | "layout" | "style" | "typography" | null) => void
+  applyDesignVariant: (index: number) => void
   setCanvasFitScale: (fitScale: number) => void
   requestCanvasFit: () => void
   bumpFontEpoch: () => void
@@ -101,7 +123,16 @@ export const useDesignStore = create<DesignState>()(
       designChatThreadNonce: 0,
       shapeToolVariant: "rectangle",
       fontEpoch: 0,
-      designAgentPipelineEnabled: false,
+      designAgentPipelineEnabled: true,
+      stylePresetId: null,
+      pendingVariantLayoutIds: null,
+      designVariants: null,
+      activeVariantIndex: 0,
+      lastLayoutId: null,
+      lastCritiqueScore: null,
+      densityOverride: null,
+      hierarchyOverride: null,
+      regenerationMode: null,
 
       resetDesignChatThread: () =>
         set((s) => ({ designChatThreadNonce: s.designChatThreadNonce + 1 })),
@@ -251,6 +282,26 @@ export const useDesignStore = create<DesignState>()(
       setPendingDesignImage: (dataUrl) => set({ pendingDesignImage: dataUrl }),
       setDesignChatModel: (model) => set({ designChatModel: model }),
       setDesignAgentPipelineEnabled: (enabled) => set({ designAgentPipelineEnabled: enabled }),
+      setStylePresetId: (id) => set({ stylePresetId: id }),
+      setPendingVariantLayoutIds: (ids) => set({ pendingVariantLayoutIds: ids }),
+      setDesignVariants: (variants) =>
+        set({ designVariants: variants, activeVariantIndex: 0 }),
+      setActiveVariantIndex: (index) => set({ activeVariantIndex: index }),
+      setDensityOverride: (d) => set({ densityOverride: d }),
+      setHierarchyOverride: (h) => set({ hierarchyOverride: h }),
+      setRegenerationMode: (mode) => set({ regenerationMode: mode }),
+      applyDesignVariant: (index) => {
+        const variants = get().designVariants
+        if (!variants || index < 0 || index >= variants.length) return
+        const v = variants[index]!
+        set({
+          document: v.document,
+          activeVariantIndex: index,
+          lastLayoutId: v.layoutId,
+          lastCritiqueScore: v.critique.compositeScore,
+          canvasFitRequestTick: get().canvasFitRequestTick + 1,
+        })
+      },
       setCanvasFitScale: (fitScale) => set({ canvasFitScale: fitScale }),
       requestCanvasFit: () =>
         set((s) => ({ canvasFitRequestTick: s.canvasFitRequestTick + 1 })),

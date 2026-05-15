@@ -1,0 +1,118 @@
+{
+  "id": "feature-bento",
+  "category": "feature-slide",
+  "archetype": "bento-grid",
+  "styleTags": [
+    "feature",
+    "bento",
+    "capabilities"
+  ],
+  "density": "high",
+  "hierarchy": "balanced",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.05,
+        "w": 1,
+        "h": 0.1
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "f1",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.2,
+        "w": 0.5,
+        "h": 0.32
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "f2",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.5,
+        "y": 0.2,
+        "w": 0.5,
+        "h": 0.32
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "f3",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.58,
+        "w": 0.333,
+        "h": 0.28
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "f4",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.333,
+        "y": 0.58,
+        "w": 0.333,
+        "h": 0.28
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "f5",
+      "role": "body",
+      "relativeRect": {
+        "x": 0.667,
+        "y": 0.58,
+        "w": 0.333,
+        "h": 0.28
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "accent_icon",
+      "role": "icon",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.9166666666666666,
+        "w": 0.08333333333333333,
+        "h": 0.08333333333333333
+      },
+      "alignment": "center",
+      "importance": "tertiary",
+      "iconHint": "arrow-right"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "bento-grid",
+    "tags": [
+      "feature",
+      "bento",
+      "capabilities"
+    ]
+  }
+}

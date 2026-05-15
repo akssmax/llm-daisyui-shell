@@ -1,0 +1,69 @@
+{
+  "id": "quote-editorial",
+  "category": "quote-card",
+  "archetype": "editorial-asymmetric",
+  "styleTags": [
+    "quote",
+    "editorial",
+    "magazine"
+  ],
+  "density": "low",
+  "hierarchy": "balanced",
+  "regions": [
+    {
+      "id": "quote",
+      "role": "quote",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.15,
+        "w": 0.667,
+        "h": 0.5
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "attribution",
+      "role": "subheading",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.7,
+        "w": 0.5,
+        "h": 0.12
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "accent",
+      "role": "image",
+      "relativeRect": {
+        "x": 0.667,
+        "y": 0.1,
+        "w": 0.333,
+        "h": 0.8
+      },
+      "alignment": "center",
+      "importance": "tertiary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "editorial-asymmetric",
+    "tags": [
+      "quote",
+      "editorial",
+      "magazine"
+    ]
+  }
+}

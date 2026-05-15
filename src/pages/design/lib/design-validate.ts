@@ -19,6 +19,8 @@ export type DesignValidationIssue = {
 export type DesignValidationResult = {
   valid: boolean
   issues: DesignValidationIssue[]
+  /** 0–100 quality score from soft issues (overlap, margin, contrast, etc.) */
+  qualityScore?: number
 }
 
 const GRID = 8
@@ -181,8 +183,14 @@ export function validateDesignDocument(doc: DesignDocument, opts?: { safeMargin?
   }
 
   // Only out-of-artboard elements are hard failures that block the canvas apply.
-  // Overlap, margin violations, and cosmetic issues are logged for the UI but do not
-  // trigger LLM repair, because small models often make overlap worse when asked to fix it.
   const hard = issues.filter((i) => i.type === "bounds")
-  return { valid: hard.length === 0, issues }
+  const soft = issues.filter((i) => i.type !== "bounds")
+  let qualityPenalty = 0
+  for (const i of soft) {
+    qualityPenalty +=
+      i.type === "overlap" || i.type === "contrast" ? 15 : i.type === "margin" ? 10 : 5
+  }
+  const qualityScore = Math.max(0, 100 - qualityPenalty)
+
+  return { valid: hard.length === 0, issues, qualityScore }
 }

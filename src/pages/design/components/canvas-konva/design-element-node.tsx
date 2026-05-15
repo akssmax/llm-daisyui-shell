@@ -4,6 +4,7 @@ import type Konva from "konva"
 import type { DesignElement, ImageElement } from "../../types"
 import { fontFamilyForKonva } from "../../lib/design-fonts"
 import { konvaFontStyleFromTextElement } from "../../lib/design-text-style"
+import { LucideKonvaIcon } from "./lucide-konva-icon"
 
 type Props = {
   element: DesignElement
@@ -153,17 +154,11 @@ export const DesignElementNode = memo(
           opacity={element.opacity}
           {...bind}
         >
-          <Text
-            x={0}
-            y={0}
+          <LucideKonvaIcon
+            iconName={element.iconName}
+            color={element.color}
             width={element.width}
             height={element.height}
-            text="◆"
-            fontSize={Math.min(element.width, element.height) * 0.55}
-            fill={element.color}
-            align="center"
-            verticalAlign="middle"
-            listening={false}
           />
           <ElementHitOverlay width={element.width} height={element.height} locked={locked} />
         </Group>

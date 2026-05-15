@@ -1,0 +1,73 @@
+{
+  "id": "social-full-bleed",
+  "category": "social-post",
+  "archetype": "full-bleed-image",
+  "styleTags": [
+    "social",
+    "photo",
+    "lifestyle"
+  ],
+  "density": "low",
+  "hierarchy": "strong",
+  "regions": [
+    {
+      "id": "image",
+      "role": "image",
+      "relativeRect": {
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 0.65
+      },
+      "alignment": "center",
+      "importance": "primary"
+    },
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.68,
+        "w": 0.833,
+        "h": 0.15
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "cta",
+      "role": "cta",
+      "relativeRect": {
+        "x": 0.083,
+        "y": 0.86,
+        "w": 0.5,
+        "h": 0.08
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1080
+    },
+    {
+      "w": 1080,
+      "h": 1350
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "full-bleed-image",
+    "tags": [
+      "social",
+      "photo",
+      "lifestyle"
+    ]
+  }
+}

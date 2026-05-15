@@ -1,0 +1,83 @@
+{
+  "id": "li-carousel-split",
+  "category": "linkedin-carousel",
+  "archetype": "split",
+  "styleTags": [
+    "linkedin",
+    "carousel",
+    "saas",
+    "professional"
+  ],
+  "density": "medium",
+  "hierarchy": "balanced",
+  "regions": [
+    {
+      "id": "headline",
+      "role": "headline",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.1,
+        "w": 0.417,
+        "h": 0.25
+      },
+      "alignment": "left",
+      "importance": "primary"
+    },
+    {
+      "id": "body",
+      "role": "body",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.4,
+        "w": 0.417,
+        "h": 0.35
+      },
+      "alignment": "left",
+      "importance": "secondary"
+    },
+    {
+      "id": "visual",
+      "role": "image",
+      "relativeRect": {
+        "x": 0.5,
+        "y": 0.1,
+        "w": 0.5,
+        "h": 0.75
+      },
+      "alignment": "center",
+      "importance": "secondary"
+    },
+    {
+      "id": "footer",
+      "role": "footer",
+      "relativeRect": {
+        "x": 0,
+        "y": 0.9,
+        "w": 1,
+        "h": 0.06
+      },
+      "alignment": "left",
+      "importance": "tertiary"
+    }
+  ],
+  "supportedAspects": [
+    {
+      "w": 1080,
+      "h": 1350
+    }
+  ],
+  "grid": {
+    "columns": 12,
+    "safeMargin": 64
+  },
+  "reference": {
+    "source": "manual",
+    "archetype": "split",
+    "tags": [
+      "linkedin",
+      "carousel",
+      "saas",
+      "professional"
+    ]
+  }
+}

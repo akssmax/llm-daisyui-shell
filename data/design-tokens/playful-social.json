@@ -1,0 +1,54 @@
+{
+  "id": "playful-social",
+  "name": "Playful Social",
+  "styleTags": [
+    "social",
+    "playful",
+    "colorful"
+  ],
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48
+  ],
+  "typography": {
+    "hero": 72,
+    "h1": 52,
+    "h2": 36,
+    "h3": 28,
+    "body": 22,
+    "caption": 16
+  },
+  "colors": {
+    "background": "#FEF3C7",
+    "surface": "#FDE68A",
+    "textPrimary": "#78350F",
+    "textSecondary": "#92400E",
+    "accent": "#EC4899"
+  },
+  "radius": [
+    12,
+    16,
+    24,
+    32
+  ],
+  "shadows": {
+    "sm": "0 2px 4px rgba(120,53,15,0.1)",
+    "md": "0 6px 16px rgba(120,53,15,0.12)",
+    "lg": "0 12px 32px rgba(120,53,15,0.15)"
+  },
+  "rules": {
+    "lineHeight": {
+      "hero": 1.1,
+      "body": 1.45
+    },
+    "maxLineWidth": 600,
+    "contrastMin": 4.5
+  },
+  "headingFont": "Comic Sans MS",
+  "bodyFont": "Arial"
+}
