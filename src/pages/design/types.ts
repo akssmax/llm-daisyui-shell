@@ -130,7 +130,7 @@ export type PatchOp =
   | {
       op: "update_page"
       pageId: string
-      patch: Partial<Pick<DesignPage, "backgroundColor" | "backgroundPattern">>
+      patch: Partial<Pick<DesignPage, "backgroundColor" | "backgroundPattern" | "width" | "height">>
     }
   | { op: "reorder_element"; pageId: string; elementId: string; zIndex: number }
 

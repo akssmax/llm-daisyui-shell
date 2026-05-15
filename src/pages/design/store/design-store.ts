@@ -5,6 +5,8 @@ import type { MistralModel } from "@/lib/llm-types"
 import type { DesignDocument, DesignElement, PatchOp, Theme, ShapeKind } from "../types"
 import type { DesignVariant } from "../lib/layout-intelligence/types"
 import type { CanvasPresetMode } from "../lib/design-presets"
+import type { DesignAgentOperation } from "../lib/design-agent-router"
+import { REMIX_LAYOUT_USER_MESSAGE } from "../lib/design-agent-router"
 import { safePageElements } from "../lib/safe-page-elements"
 import { applyPatch } from "./patch-reducer"
 
@@ -85,6 +87,8 @@ type DesignState = {
   regenerationMode: "full" | "layout" | "style" | "typography" | null
   /** Fixed preset size, or "auto" to let intent pick dimensions from the prompt. */
   canvasPresetMode: CanvasPresetMode
+  /** Queued agent turn (e.g. Remix layout from canvas) — consumed by design chat panel. */
+  pendingAgentTurn: { message: string; forcedOperation: DesignAgentOperation } | null
 
   setDocument: (doc: DesignDocument) => void
   clearDocument: () => void
@@ -130,6 +134,8 @@ type DesignState = {
   setCanvasFitScale: (fitScale: number) => void
   requestCanvasFit: () => void
   bumpFontEpoch: () => void
+  requestRemixLayout: () => void
+  consumePendingAgentTurn: () => { message: string; forcedOperation: DesignAgentOperation } | null
 }
 
 export const useDesignStore = create<DesignState>()(
@@ -176,6 +182,7 @@ export const useDesignStore = create<DesignState>()(
       hierarchyOverride: null,
       regenerationMode: null,
       canvasPresetMode: "auto",
+      pendingAgentTurn: null,
 
       resetDesignChatThread: () =>
         set((s) => ({ designChatThreadNonce: s.designChatThreadNonce + 1 })),
@@ -495,6 +502,23 @@ export const useDesignStore = create<DesignState>()(
       requestCanvasFit: () =>
         set((s) => ({ canvasFitRequestTick: s.canvasFitRequestTick + 1 })),
       bumpFontEpoch: () => set((s) => ({ fontEpoch: s.fontEpoch + 1 })),
+
+      requestRemixLayout: () => {
+        if (!get().document) return
+        set({
+          pendingAgentTurn: {
+            message: REMIX_LAYOUT_USER_MESSAGE,
+            forcedOperation: "design_recompose_layout",
+          },
+        })
+      },
+
+      consumePendingAgentTurn: () => {
+        const pending = get().pendingAgentTurn
+        if (!pending) return null
+        set({ pendingAgentTurn: null })
+        return pending
+      },
     }),
     {
       name: "chatShell.designs.v1",

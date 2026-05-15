@@ -19,6 +19,8 @@ export type CanvasFormatId =
   | "website-hero"
   | "poster-a3"
   | "business-card"
+  | "invoice"
+  | "receipt"
   | "twitter-post"
   | "youtube-thumbnail"
   | "custom"
@@ -149,6 +151,20 @@ export const CANVAS_FORMATS: Record<CanvasFormatId, CanvasSpec> = {
     documentType: "document",
     label: "Business Card",
   },
+  invoice: {
+    width: 794,
+    height: 1123,
+    format: "invoice",
+    documentType: "document",
+    label: "Invoice (A4)",
+  },
+  receipt: {
+    width: 400,
+    height: 720,
+    format: "receipt",
+    documentType: "document",
+    label: "Receipt",
+  },
   "twitter-post": {
     width: 1200,
     height: 675,
@@ -224,6 +240,13 @@ export function inferCanvasFromMessage(userMessage: string): CanvasSpec {
   const blob = userMessage.toLowerCase()
 
   if (blob.includes("cover letter")) return CANVAS_FORMATS["cover-letter"]
+  if (blob.includes("receipt") || blob.includes("thermal print")) return CANVAS_FORMATS.receipt
+  if (blob.includes("invoice") || blob.includes("billing statement") || blob.includes("bill to")) {
+    return CANVAS_FORMATS.invoice
+  }
+  if (blob.includes("quote") && (blob.includes("client") || blob.includes("total"))) {
+    return CANVAS_FORMATS.invoice
+  }
   if (blob.includes("resume") || blob.includes("résumé") || blob.includes("cv")) {
     return CANVAS_FORMATS.resume
   }
@@ -243,6 +266,17 @@ export function inferCanvasFromMessage(userMessage: string): CanvasSpec {
   if (blob.includes("twitter") || blob.includes(" x post")) return CANVAS_FORMATS["twitter-post"]
   if (blob.includes("instagram story")) return CANVAS_FORMATS["instagram-story"]
   if (blob.includes("instagram")) return CANVAS_FORMATS["instagram-post"]
+  if (
+    blob.includes("linkedin") &&
+    (/\b(1\s*:\s*1|1:1|square)\b/.test(blob) || blob.includes("canvas size"))
+  ) {
+    return {
+      ...CANVAS_FORMATS["instagram-post"],
+      format: "linkedin-post",
+      documentType: "social-post",
+      label: "LinkedIn Square (1:1)",
+    }
+  }
   if (blob.includes("linkedin") && blob.includes("carousel")) return CANVAS_FORMATS["linkedin-carousel"]
   if (blob.includes("linkedin")) return CANVAS_FORMATS["linkedin-post"]
   if (blob.includes("presentation") || blob.includes("pitch deck") || blob.includes("slide deck")) {
@@ -299,6 +333,47 @@ export function inferDocumentTypeFromMessage(
     return asDocumentType(intent.plan.canvas.documentType)
   }
   return resolveCanvasSpec({ userMessage, intent, presetKey: "auto" }).documentType
+}
+
+export function documentMatchesCanvasSpec(
+  doc: import("../../types").DesignDocument,
+  spec: CanvasSpec,
+): boolean {
+  if (doc.pages.length === 0) return false
+  return doc.pages.every((p) => p.width === spec.width && p.height === spec.height)
+}
+
+/** User explicitly asked to change artboard / canvas dimensions. */
+export function userRequestsCanvasResize(userMessage: string): boolean {
+  const blob = userMessage.toLowerCase()
+  return (
+    /\b(canvas\s+size|artboard\s+size|frame\s+size|page\s+size|resize\s+(?:the\s+)?(?:canvas|artboard|frame|pages?))\b/.test(
+      blob,
+    ) ||
+    /\b(use|set|switch\s+to|change\s+to)\s+(?:that\s+)?(?:canvas|artboard)\s+size\b/.test(blob) ||
+    /\b(1\s*:\s*1|1:1|square\s+canvas|square\s+format)\b/.test(blob) ||
+    /\b\d{3,4}\s*[x×]\s*\d{3,4}\b/.test(blob)
+  )
+}
+
+/** Whether the agent should resize all pages to the resolved canvas spec after compose. */
+export function shouldApplyCanvasSpecToDocument(
+  doc: import("../../types").DesignDocument | null,
+  spec: CanvasSpec,
+  userMessage: string,
+  intent?: IntentPlanPayload | null,
+): boolean {
+  if (!doc || doc.pages.length === 0) return true
+  if (documentMatchesCanvasSpec(doc, spec)) return false
+  if (userRequestsCanvasResize(userMessage)) return true
+  if (intent?.plan?.canvas) {
+    const mentionsFormat =
+      /\b(canvas|artboard|frame|size|dimension|linkedin|instagram|twitter|presentation|a4|format|aspect)\b/i.test(
+        userMessage,
+      )
+    if (mentionsFormat) return true
+  }
+  return false
 }
 
 /** Resize every page on the document to the resolved artboard size. */

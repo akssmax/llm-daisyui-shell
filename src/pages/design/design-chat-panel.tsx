@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { nanoid } from "nanoid"
 import type { FileUIPart } from "ai"
-import { AlertCircle, Brain, Check, Copy, Plus, Shuffle, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react"
+import {
+  AlertCircle,
+  Brain,
+  Check,
+  ChevronDown,
+  Copy,
+  Plus,
+  Shuffle,
+  Sparkles,
+  ThumbsDown,
+  ThumbsUp,
+} from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 import {
   Attachment,
@@ -34,6 +45,7 @@ import { DesignAgentChainOfThought } from "./components/design-agent-chain-of-th
 import { rateDesignGeneration } from "./lib/layout-intelligence/design-memory-store"
 import { toast } from "sonner"
 import type { DesignAgentPhaseTrace } from "./lib/design-agent-orchestrator"
+import type { DesignAgentOperation } from "./lib/design-agent-router"
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -50,13 +62,15 @@ import {
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 import { MISTRAL_MODELS } from "@/lib/llm-types"
 import type { MistralModel } from "@/lib/llm-types"
@@ -65,7 +79,7 @@ import { useDesignStore } from "./store/design-store"
 import type { DesignAiResponse } from "./types"
 import { sendDesignMessage, type DesignChatMessage, type DesignAssistantStreamMeta } from "./lib/design-ai-service"
 import { pickRandomStarterPrompts } from "./lib/design-starter-prompts"
-import { LayersPanel } from "./components/layers/layers-panel"
+import { PresetPicker } from "./components/toolbar/preset-picker"
 import { DESIGN_MODEL_PARSE_TRUNCATED_MESSAGE } from "./lib/design-json-parser"
 
 const CONTINUE_RESPONSE_PROMPT =
@@ -155,6 +169,7 @@ export function DesignChatPanel() {
   }, [])
 
   const {
+    document,
     setDocument,
     applyPatches,
     isAiLoading,
@@ -164,8 +179,11 @@ export function DesignChatPanel() {
     designChatThreadNonce,
     designAgentPipelineEnabled,
     setDesignAgentPipelineEnabled,
+    pendingAgentTurn,
+    consumePendingAgentTurn,
   } = useDesignStore(
     useShallow((s) => ({
+      document: s.document,
       setDocument: s.setDocument,
       applyPatches: s.applyPatches,
       isAiLoading: s.isAiLoading,
@@ -175,6 +193,8 @@ export function DesignChatPanel() {
       designChatThreadNonce: s.designChatThreadNonce,
       designAgentPipelineEnabled: s.designAgentPipelineEnabled,
       setDesignAgentPipelineEnabled: s.setDesignAgentPipelineEnabled,
+      pendingAgentTurn: s.pendingAgentTurn,
+      consumePendingAgentTurn: s.consumePendingAgentTurn,
     })),
   )
 
@@ -243,7 +263,7 @@ export function DesignChatPanel() {
   }, [])
 
   const send = useCallback(
-    async (text: string, files: FileUIPart[] = []) => {
+    async (text: string, files: FileUIPart[] = [], forcedOperation?: DesignAgentOperation) => {
       const hasText = Boolean(text.trim())
       const hasFiles = files.length > 0
       if ((!hasText && !hasFiles) || isAiLoading) return
@@ -298,6 +318,7 @@ export function DesignChatPanel() {
         attachments: hasFiles ? files : undefined,
         signal: abortRef.current.signal,
         agentPipelineForTurn: agentForTurn,
+        forcedOperation,
         onDesignAgentPhase: (trace) => {
           setAgentLivePhases((prev) => {
             const j = prev.findIndex((p) => p.id === trace.id)
@@ -371,6 +392,13 @@ export function DesignChatPanel() {
     [messages, isAiLoading, setDocument, applyPatches, setAiLoading, flushStreamTrace, scheduleStreamTraceFlush],
   )
 
+  useEffect(() => {
+    if (!pendingAgentTurn || isAiLoading) return
+    const pending = consumePendingAgentTurn()
+    if (!pending) return
+    void send(pending.message, [], pending.forcedOperation)
+  }, [pendingAgentTurn, isAiLoading, consumePendingAgentTurn, send])
+
   function handleSubmit(message: PromptInputMessage) {
     const hasText = Boolean(message.text?.trim())
     const hasFiles = Boolean(message.files?.length)
@@ -393,6 +421,22 @@ export function DesignChatPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden border-r">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3">
+        <SidebarTrigger className="md:hidden" />
+        <Separator orientation="vertical" className="mr-1 h-4 md:hidden" />
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <p className="truncate text-sm font-semibold text-foreground">
+            {document?.title ?? "Design"}
+          </p>
+          {document && (
+            <span className="truncate text-xs text-muted-foreground capitalize">
+              · {document.type.replace("-", " ")}
+            </span>
+          )}
+        </div>
+        <PresetPicker />
+      </header>
+
       <Conversation className="min-h-0 flex-1">
         <ConversationContent className="px-3 py-3">
           {messages.length === 0 ? (
@@ -617,10 +661,6 @@ export function DesignChatPanel() {
         <ConversationScrollButton />
       </Conversation>
 
-      <div className="shrink-0 border-t">
-        <LayersPanel />
-      </div>
-
       <div className="shrink-0 border-t p-3">
         <PromptInputProvider>
           <PromptInput maxFileSize={5 * 1024 * 1024} maxFiles={4} onSubmit={handleSubmit}>
@@ -642,25 +682,33 @@ export function DesignChatPanel() {
                   </PromptInputActionMenuContent>
                 </PromptInputActionMenu>
 
-                <Select
-                  onValueChange={(value) => setDesignChatModel(value as MistralModel)}
-                  value={designChatModel}
-                  disabled={chatStatus === "streaming"}
-                >
-                  <SelectTrigger className="h-8 min-w-44 rounded-xl bg-background text-xs text-foreground">
-                    <div className="flex items-center gap-1.5">
-                      <Brain className="size-3.5 text-muted-foreground" />
-                      <SelectValue placeholder="Select model" />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MISTRAL_MODELS.map((model) => (
-                      <SelectItem key={model} value={model}>
-                        {model}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 shrink-0 gap-0.5 rounded-xl bg-background px-1.5"
+                      disabled={chatStatus === "streaming"}
+                      aria-label={`Model: ${designChatModel}`}
+                    >
+                      <Brain className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                      <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-[12rem]">
+                    <DropdownMenuRadioGroup
+                      value={designChatModel}
+                      onValueChange={(value) => setDesignChatModel(value as MistralModel)}
+                    >
+                      {MISTRAL_MODELS.map((model) => (
+                        <DropdownMenuRadioItem key={model} value={model}>
+                          {model}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <div className="flex items-center gap-2 rounded-lg border border-border/80 bg-muted/20 px-2 py-1">
                   <Switch
                     id="design-agent-toggle"

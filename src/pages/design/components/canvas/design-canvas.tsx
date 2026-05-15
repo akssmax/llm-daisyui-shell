@@ -4,6 +4,7 @@ import { useDesignStore, type DesignViewport } from "../../store/design-store"
 import { DesignKonvaStage } from "../canvas-konva/design-konva-stage"
 import { DesignViewportBar } from "./design-viewport-bar"
 import { DesignSelectionBar } from "./design-selection-bar"
+import { DesignRemixLayoutButton } from "./design-remix-layout-button"
 
 export interface DesignCanvasHandle {
   getPageElement: () => HTMLDivElement | null
@@ -131,6 +132,9 @@ export const DesignCanvas = forwardRef<DesignCanvasHandle>((_, ref) => {
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-muted/30">
       <div className="relative min-h-0 flex-1">
         <DesignSelectionBar />
+        <div className="pointer-events-none absolute top-2 right-2 z-10">
+          <DesignRemixLayoutButton />
+        </div>
         <div ref={measureRef} className="absolute inset-0">
           <DesignKonvaStage
             width={size.w}

@@ -1,7 +1,5 @@
 import { useMemo } from "react"
-import { Layers } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import { useDesignStore } from "../../store/design-store"
@@ -75,12 +73,7 @@ export function LayersPanel() {
   }
 
   return (
-    <Collapsible defaultOpen>
-      <CollapsibleTrigger className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground">
-        <Layers className="h-3 w-3" />
-        Layers ({sorted.length})
-      </CollapsibleTrigger>
-      <CollapsibleContent>
+    <>
         <div className="flex flex-col gap-2 border-b border-border/60 px-2 pb-2 pt-1">
           <button
             type="button"
@@ -132,7 +125,6 @@ export function LayersPanel() {
             ))
           )}
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+    </>
   )
 }

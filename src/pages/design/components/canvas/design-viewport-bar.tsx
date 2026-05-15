@@ -1,6 +1,5 @@
 import { useShallow } from "zustand/react/shallow"
 import { Grid3X3, Magnet, Maximize2 } from "lucide-react"
-import { LayoutPickerButton } from "./layout-picker-button"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
@@ -65,7 +64,6 @@ export function DesignViewportBar() {
         />
         <span className="text-muted-foreground text-xs">Snap</span>
       </div>
-      <LayoutPickerButton />
     </div>
   )
 }

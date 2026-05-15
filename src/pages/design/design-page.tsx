@@ -1,6 +1,4 @@
 import { useEffect, useRef } from "react"
-import { SidebarTrigger } from "@/components/ui/sidebar"
-import { Separator } from "@/components/ui/separator"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -15,6 +13,7 @@ import { DesignToolbar } from "./components/toolbar/design-toolbar"
 import { ExportMenu } from "./components/toolbar/export-menu"
 import { PageNavigator } from "./components/page-nav/page-navigator"
 import { FloatingDesignProperties } from "./components/properties/floating-design-properties"
+import { CanvasLayersControl } from "./components/layers/canvas-layers-control"
 // import { DesignTextQuickStrip } from "./components/canvas/design-text-quick-strip"
 import { useDesignKeyboardShortcuts } from "./hooks/use-design-keyboard-shortcuts"
 
@@ -35,30 +34,6 @@ export function DesignPage({ onDocumentChange }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      {/* Header */}
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3">
-        <SidebarTrigger className="md:hidden" />
-        <Separator orientation="vertical" className="mr-1 h-4 md:hidden" />
-
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <p className="truncate text-sm font-semibold text-foreground">
-            {document?.title ?? "Design"}
-          </p>
-          {document && (
-            <span className="truncate text-xs text-muted-foreground capitalize">
-              · {document.type.replace("-", " ")}
-            </span>
-          )}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          {/* <DesignTextQuickStrip /> — restore when header quick edit returns */}
-          <DesignToolbar />
-          <ExportMenu canvasRef={canvasRef} />
-        </div>
-      </header>
-
-      {/* Body */}
       <ResizablePanelGroup
         orientation="horizontal"
         className="min-h-0 flex-1 overflow-hidden"
@@ -85,6 +60,15 @@ export function DesignPage({ onDocumentChange }: Props) {
           className="min-w-0 overflow-hidden"
         >
           <div className="flex h-full min-h-0 flex-col overflow-hidden">
+            <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3">
+              <CanvasLayersControl />
+              <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+                {/* <DesignTextQuickStrip /> — restore when header quick edit returns */}
+                <DesignToolbar />
+                <ExportMenu canvasRef={canvasRef} />
+              </div>
+            </header>
+
             <div className="relative min-h-0 flex-1 overflow-hidden">
               <DesignCanvas ref={canvasRef} />
               <FloatingDesignProperties />

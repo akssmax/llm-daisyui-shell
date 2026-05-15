@@ -76,6 +76,13 @@ export type LayoutTree = {
   constraints?: import("./layout-intelligence/types").LayoutConstraints
 }
 
+export type ContentStructureLineItem = {
+  description: string
+  qty?: string
+  rate?: string
+  amount?: string
+}
+
 export type ContentStructure = {
   headline?: string
   subheading?: string
@@ -84,6 +91,17 @@ export type ContentStructure = {
   stats?: string[]
   quote?: string
   tone?: string
+  brandName?: string
+  invoiceNumber?: string
+  billTo?: string
+  shipTo?: string
+  lineItems?: ContentStructureLineItem[]
+  subtotal?: string
+  tax?: string
+  total?: string
+  footer?: string
+  date?: string
+  dueDate?: string
 }
 
 export type IntentPlanPayload = {
@@ -239,6 +257,31 @@ export function parseContentStructure(obj: unknown): ContentStructure | null {
   if (isNonEmptyString(s.tone)) out.tone = s.tone.trim()
   if (Array.isArray(s.stats)) {
     out.stats = s.stats.filter(isNonEmptyString).map((x) => x.trim())
+  }
+  if (isNonEmptyString(s.brandName)) out.brandName = s.brandName.trim()
+  if (isNonEmptyString(s.invoiceNumber)) out.invoiceNumber = s.invoiceNumber.trim()
+  if (isNonEmptyString(s.billTo)) out.billTo = s.billTo.trim()
+  if (isNonEmptyString(s.shipTo)) out.shipTo = s.shipTo.trim()
+  if (isNonEmptyString(s.subtotal)) out.subtotal = s.subtotal.trim()
+  if (isNonEmptyString(s.tax)) out.tax = s.tax.trim()
+  if (isNonEmptyString(s.total)) out.total = s.total.trim()
+  if (isNonEmptyString(s.footer)) out.footer = s.footer.trim()
+  if (isNonEmptyString(s.date)) out.date = s.date.trim()
+  if (isNonEmptyString(s.dueDate)) out.dueDate = s.dueDate.trim()
+  if (Array.isArray(s.lineItems)) {
+    const items: ContentStructureLineItem[] = []
+    for (const row of s.lineItems) {
+      if (!row || typeof row !== "object") continue
+      const r = row as Record<string, unknown>
+      if (!isNonEmptyString(r.description)) continue
+      items.push({
+        description: r.description.trim(),
+        ...(isNonEmptyString(r.qty) ? { qty: r.qty.trim() } : {}),
+        ...(isNonEmptyString(r.rate) ? { rate: r.rate.trim() } : {}),
+        ...(isNonEmptyString(r.amount) ? { amount: r.amount.trim() } : {}),
+      })
+    }
+    if (items.length > 0) out.lineItems = items
   }
   if (Object.keys(out).length === 0) return null
   return out

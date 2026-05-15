@@ -81,7 +81,7 @@ PATCH OPERATIONS:
 - { op:"create_element", pageId, element }
 - { op:"update_element", pageId, elementId, patch }
 - { op:"delete_element", pageId, elementId }
-- { op:"update_page", pageId, patch }   patch may include { backgroundColor, backgroundPattern }
+- { op:"update_page", pageId, patch }   patch may include { backgroundColor, backgroundPattern, width, height }
 - { op:"apply_theme", theme }
 - { op:"create_page", page }
 - { op:"delete_page", pageId }

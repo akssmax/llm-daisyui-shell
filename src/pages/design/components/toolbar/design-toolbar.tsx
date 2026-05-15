@@ -30,7 +30,6 @@ import {
   shapeToolLabel,
 } from "../../lib/shape-tool-variants.tsx"
 import { AGENT_AVATAR_SHAPES } from "../../lib/agent-silhouette-registry"
-import { PresetPicker } from "./preset-picker"
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
@@ -137,11 +136,8 @@ export function DesignToolbar() {
         }}
       />
 
-      <PresetPicker />
-
       {document && (
         <>
-          <Separator orientation="vertical" className="mx-1 h-5" />
           <ToolbarTooltip label="Undo (⌘Z)" disabled={past.length === 0}>
             <Button
               variant="ghost"

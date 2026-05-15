@@ -6,6 +6,7 @@ import { extractJsonFromStream } from "./design-json-parser"
 import { useDesignStore } from "../store/design-store"
 import { buildDesignSystemPrompt } from "./design-prompt"
 import { runDesignAgentTurn, type DesignAgentPhaseTrace } from "./design-agent-orchestrator"
+import type { DesignAgentOperation } from "./design-agent-router"
 
 export type DesignCitation = { href: string; label: string }
 
@@ -47,6 +48,8 @@ export async function sendDesignMessage(options: {
    * If omitted, reads `designAgentPipelineEnabled` from the design store.
    */
   agentPipelineForTurn?: boolean
+  /** Force agent operation (e.g. layout remix from canvas button). */
+  forcedOperation?: DesignAgentOperation
   /** SSE `agent_phase` events (when phase id is sent to `/api/chat`). */
   onAgentPhase?: (payload: AgentPhaseSsePayload) => void
   /** After each design-agent phase completes (browser orchestrator). */
@@ -63,6 +66,7 @@ export async function sendDesignMessage(options: {
     onError,
     signal,
     agentPipelineForTurn: agentPipelineForTurnOption,
+    forcedOperation,
     onAgentPhase,
     onDesignAgentPhase,
   } = options
@@ -76,6 +80,7 @@ export async function sendDesignMessage(options: {
         attachments,
         signal,
         model: designChatModel,
+        forcedOperation,
         onAgentPhase,
         onPhaseComplete: onDesignAgentPhase,
       })

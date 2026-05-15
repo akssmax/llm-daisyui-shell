@@ -1,6 +1,12 @@
 import type { DesignDocument } from "../types"
 import { buildDesignSystemPrompt, buildSlimDocumentContextForAgent, COMPOSE_SCHEMA_EXCERPT } from "./design-prompt"
-import type { DesignTokenBundle, IntentPlanPayload, LayoutTree } from "./design-agent-schemas"
+import type {
+  ContentStructure,
+  DesignTokenBundle,
+  IntentPlanPayload,
+  LayoutTree,
+} from "./design-agent-schemas"
+import type { CanvasSpec } from "./layout-intelligence/canvas-spec"
 import { retrieveDesignPatterns } from "./design-pattern-retrieval"
 import type { LayoutPattern } from "./layout-intelligence/types"
 import { silhouettesForPrompt } from "./agent-silhouette-registry"
@@ -557,5 +563,158 @@ export function buildRepairPatchesSystemPrompt(
     slim,
     "",
     "Allowed patch ops: update_element, delete_element, create_element, update_page, apply_theme, reorder_element.",
+  ].join("\n")
+}
+
+/** V2 planning context — free-form layout (no catalog regions). */
+export function summarizeV2PlanningContext(
+  intentPlan: IntentPlanPayload,
+  tokens: DesignTokenBundle,
+  canvas: CanvasSpec,
+  contentStructure?: ContentStructure | null,
+  contentManifestJson?: string | null,
+): string {
+  const lines = [
+    `Intent: ${intentPlan.intent.designType} | ${intentPlan.intent.tone} | ${intentPlan.intent.platform}`,
+    `Audience: ${intentPlan.intent.audience}`,
+    `Layout approach: ${intentPlan.plan.layoutType} (free-form — you choose regions and hierarchy)`,
+    `Hierarchy: ${intentPlan.plan.visualHierarchy.slice(0, 6).join(" > ")}`,
+    `Canvas: ${canvas.width}×${canvas.height} (${canvas.label}, ${canvas.documentType})`,
+    `Grid: ${intentPlan.plan.grid.columns} cols, safeMargin ${intentPlan.plan.grid.safeMargin}px`,
+    `Fonts: heading=${tokens.tokens.headingFont}, body=${tokens.tokens.bodyFont}`,
+    `Colors: ${JSON.stringify(tokens.tokens.colors)}`,
+  ]
+  if (contentStructure) {
+    lines.push(`Structured copy:\n${JSON.stringify(contentStructure, null, 0)}`)
+  }
+  if (contentManifestJson) {
+    lines.push(`Content manifest (preserve all strings exactly):\n${contentManifestJson}`)
+  }
+  return lines.join("\n")
+}
+
+export function buildV2ContentStructurePrompt(userMessage: string, ip: IntentPlanPayload): string {
+  const patterns = retrieveDesignPatterns(`${userMessage} invoice form table`, 2800)
+  return [
+    "You are stage 3a: extract structured copy for a document design. Do NOT output coordinates.",
+    JSON_ONLY,
+    "",
+    "Return:",
+    `{ "contentStructure": {`,
+    `  "headline", "subheading", "body", "cta", "stats", "quote", "tone",`,
+    `  "brandName", "invoiceNumber", "date", "dueDate", "billTo", "shipTo",`,
+    `  "lineItems": [{ "description", "qty", "rate", "amount" }],`,
+    `  "subtotal", "tax", "total", "footer"`,
+    `}}`,
+    "",
+    "Include only fields relevant to the request. Use realistic fake data when the user asks.",
+    "For invoices/receipts: fill lineItems (3–8 rows), totals, brand, dates, addresses.",
+    "",
+    "Intent + plan:",
+    JSON.stringify(ip),
+    "",
+    "User message:",
+    userMessage,
+    "",
+    patterns,
+  ].join("\n")
+}
+
+function buildV2ComposeBase(
+  operation: "create" | "edit" | "recompose",
+  document: DesignDocument | null,
+  ctx: string,
+  opts?: ComposePromptOptions,
+): string {
+  const includeDoc = operation !== "recompose" && opts?.includeDocument !== false
+  const docMax = opts?.documentMaxChars ?? 12_000
+  const slim = includeDoc
+    ? buildSlimDocumentContextForAgent(document, docMax)
+    : "Omitted — use planning context and content manifest only."
+
+  const opRules =
+    operation === "create"
+      ? document
+        ? "You are CREATING new pages or replacing content: prefer kind:\"document\" for empty canvas; use patches with create_page when adding slides to an existing deck."
+        : "No document yet: you MUST emit kind:\"document\" with a complete DesignDocument."
+      : operation === "recompose"
+        ? "You are REMIXING LAYOUT: emit kind:\"document\" with a full replacement. Copy every string from the content manifest exactly — only change positions, sizes, hierarchy, and decorative shapes/icons."
+        : "You are EDITING: prefer kind:\"patches\" for targeted changes; use existing pageIds. When the user asks to change canvas/artboard size, emit update_page patches with width and height on EVERY page (or kind:\"document\" with all pages resized)."
+
+  const targetIdx = opts?.targetSlideIndex
+  const targetSlideRules =
+    targetIdx != null && document && document.pages[targetIdx]
+      ? `TARGET SLIDE ONLY: slide ${targetIdx + 1}, pageId="${document.pages[targetIdx].id}".`
+      : ""
+
+  return [
+    JSON_ONLY,
+    "You are the design compose stage (v2 free-form). Place elements anywhere on the canvas — no fixed catalog layout.",
+    COMPOSE_SCHEMA_EXCERPT,
+    COMPOSE_RULES,
+    opRules,
+    targetSlideRules,
+    "",
+    "Planning context:",
+    ctx,
+    "",
+    includeDoc ? `CURRENT DOCUMENT:\n${slim}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+export function buildV2CreateComposePrompt(
+  document: DesignDocument | null,
+  intentPlan: IntentPlanPayload,
+  tokens: DesignTokenBundle,
+  canvas: CanvasSpec,
+  contentStructure?: ContentStructure | null,
+  opts?: ComposePromptOptions,
+): string {
+  const ctx = summarizeV2PlanningContext(intentPlan, tokens, canvas, contentStructure)
+  return buildV2ComposeBase("create", document, ctx, opts)
+}
+
+export function buildV2EditComposePrompt(
+  document: DesignDocument | null,
+  intentPlan: IntentPlanPayload,
+  tokens: DesignTokenBundle,
+  canvas: CanvasSpec,
+  opts?: ComposePromptOptions,
+): string {
+  const ctx = summarizeV2PlanningContext(intentPlan, tokens, canvas)
+  return buildV2ComposeBase("edit", document, ctx, opts)
+}
+
+export function buildV2RecomposeComposePrompt(
+  document: DesignDocument | null,
+  intentPlan: IntentPlanPayload,
+  tokens: DesignTokenBundle,
+  canvas: CanvasSpec,
+  contentManifestJson: string,
+): string {
+  const ctx = summarizeV2PlanningContext(intentPlan, tokens, canvas, null, contentManifestJson)
+  return buildV2ComposeBase("recompose", document, ctx, { includeDocument: false })
+}
+
+export function buildV2ComposeFallbackPrompt(
+  document: DesignDocument | null,
+  intentPlan: IntentPlanPayload,
+  tokens: DesignTokenBundle,
+  canvas: CanvasSpec,
+): string {
+  const colors = tokens.tokens.colors
+  const pageId = document?.pages[0]?.id ?? "page1"
+  const pw = document?.pages[0]?.width ?? canvas.width
+  const ph = document?.pages[0]?.height ?? canvas.height
+  return [
+    JSON_ONLY,
+    COMPOSE_SCHEMA_EXCERPT,
+    document
+      ? `Output ONLY {"kind":"patches","patches":[...]} with pageId "${pageId}".`
+      : `Output ONLY {"kind":"document","document":{...}}. Page: ${pw}×${ph}, backgroundColor:"${colors.background ?? "#FFFFFF"}".`,
+    "",
+    summarizeV2PlanningContext(intentPlan, tokens, canvas),
   ].join("\n")
 }
